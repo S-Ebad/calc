@@ -6,6 +6,7 @@ pub enum Operator {
   Sub,
   Mul,
   Div,
+  Pow,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -23,7 +24,16 @@ impl Operator {
       '-' => Some(Operator::Sub),
       '/' => Some(Operator::Div),
       '*' => Some(Operator::Mul),
+      '^' => Some(Operator::Pow),
       _ => None,
+    }
+  }
+
+  pub fn precedence(&self) -> u16 {
+    match self {
+      Operator::Add | Operator::Sub => 1,
+      Operator::Mul | Operator::Div => 2,
+      Operator::Pow => 3,
     }
   }
 }

@@ -1,4 +1,5 @@
 mod token;
+mod parser;
 
 use std::{io::{self, Write}, process};
 
@@ -17,9 +18,6 @@ fn main() {
     }
 
     let tokens = token::tokenize(&buf);
-
-    for token in tokens.iter() {
-      println!("{:?}", token);
-    }
+    parser::parse(&tokens);
   }
 }
