@@ -1,7 +1,10 @@
-mod token;
 mod parser;
+mod token;
 
-use std::{io::{self, Write}, process};
+use std::{
+  io::{self, Write},
+  process,
+};
 
 fn main() {
   let mut buf = String::new();
@@ -17,7 +20,15 @@ fn main() {
       process::exit(1);
     }
 
+    if buf.is_empty() {
+      break;
+    }
+
     let tokens = token::tokenize(&buf);
-    parser::parse(&tokens);
+
+    match parser::parse(tokens) {
+      Ok(_) => {}
+      Err(err) => eprintln!("Error: {}", err),
+    };
   }
 }

@@ -1,67 +1,86 @@
 use std::collections::VecDeque;
 
-use crate::token::Token;
+use crate::token::{Operator, Token};
 
-pub fn shunting_yard(token: &Token, stk_op: &mut Vec<Token>, que_out: &mut VecDeque<Token>) {
-  // TODO: Add Unary Minus/Plus
-
+pub fn shunting_yard(
+  token: Token,
+  op_stk: &mut Vec<Token>,
+  out_que: &mut VecDeque<Token>,
+) -> Result<(), String> {
   match token {
-    Token::Operator(op) => {
-      while let Some(top) = stk_op.last() {
-        match top {
-          Token::Operator(op2) => {
-            if op2.precedence() < op.precedence() {
-              break;
-            }
-          }
+    Token::Operator(Operator::Pos | Operator::Neg) => {
+      op_stk.push(token);
+    }
+    Token::Operator(op1) => {
+      while let Some(Token::Operator(op2)) = op_stk.last() {
+        if matches!(op2, Operator::Neg | Operator::Pos) {
+          break;
+        }
 
-          _ => break,
-        };
+        if (op2.precedence() > op1.precedence())
+          || (op2.precedence() == op1.precedence() && op1.is_left_assoc())
+        {
+          let last = op_stk.pop().expect("Stack underflow");
 
-        let last = stk_op.pop().expect("Stack underflow");
-        que_out.push_back(last);
+          out_que.push_back(last);
+        } else {
+          break;
+        }
       }
 
-      stk_op.push(*token);
+      op_stk.push(token);
     }
+    /* TODO: Token::Comma (for multi arg functions) i.e. (rand(1,2)) */
     Token::Number(_) => {
-      que_out.push_back(*token);
+      out_que.push_back(token);
     }
-    Token::LParen => {
-      stk_op.push(*token);
+    Token::Function(_) | Token::LParen => {
+      op_stk.push(token);
     }
     Token::RParen => {
-      while let Some(top) = stk_op.last() {
+      while let Some(top) = op_stk.last() {
         if matches!(top, Token::LParen) {
           break;
         }
 
-        let last = stk_op.pop().expect("Stack underflow");
-        que_out.push_back(last);
+        let last = op_stk.pop().expect("Stack underflow");
+        out_que.push_back(last);
       }
 
-      if stk_op.pop().is_none() {
-        eprintln!("Error: mismatched parentheses");
+      // MUST pop parentheses
+      if op_stk.pop().is_none() {
+        return Err(format!("Mismatched parentheses"));
+      }
+
+      // check if the parentheses was function
+      if matches!(op_stk.last(), Some(Token::Function(_))) {
+        out_que.push_back(op_stk.pop().unwrap());
       }
     }
   }
+
+  Ok(())
 }
 
-pub fn parse(tokens: &Vec<Token>) {
-  println!("tokens: {}", tokens.len());
+pub fn parse(tokens: Vec<Token>) -> Result<VecDeque<Token>, String> {
+  let mut op_stk: Vec<Token> = Vec::new();
+  let mut out_que: VecDeque<Token> = VecDeque::new();
 
-  let mut stk_op: Vec<Token> = Vec::new();
-  let mut que_out: VecDeque<Token> = VecDeque::new();
-
-  for token in tokens.iter() {
-    shunting_yard(&token, &mut stk_op, &mut que_out);
+  for token in tokens.into_iter() {
+    shunting_yard(token, &mut op_stk, &mut out_que)?;
   }
 
-  while let Some(last) = stk_op.pop() {
-    que_out.push_back(last);
+  while let Some(last) = op_stk.pop() {
+    if matches!(last, Token::RParen | Token::LParen) {
+      return Err(format!("Unclosed Parentheses"));
+    }
+
+    if let Token::Function(name) = last {
+      return Err(format!("No function arguments for {}", name));
+    }
+
+    out_que.push_back(last);
   }
 
-  for token in que_out.iter() {
-    println!("{:?}", token);
-  }
+  Ok(out_que)
 }
