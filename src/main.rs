@@ -1,3 +1,4 @@
+mod eval;
 mod parser;
 mod token;
 
@@ -5,6 +6,8 @@ use std::{
   io::{self, Write},
   process,
 };
+
+use crate::{eval::eval, parser::parse, token::tokenize};
 
 fn main() {
   let mut buf = String::new();
@@ -24,11 +27,12 @@ fn main() {
       break;
     }
 
-    let tokens = token::tokenize(&buf);
-
-    match parser::parse(tokens) {
-      Ok(_) => {}
+    match tokenize(&buf)
+      .and_then(|tokens| parse(tokens))
+      .and_then(|tokens| eval(tokens))
+    {
+      Ok(sum) => println!("= {}", sum),
       Err(err) => eprintln!("Error: {}", err),
-    };
+    }
   }
 }

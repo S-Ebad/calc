@@ -8,12 +8,24 @@ pub fn shunting_yard(
   out_que: &mut VecDeque<Token>,
 ) -> Result<(), String> {
   match token {
-    Token::Operator(Operator::Pos | Operator::Neg) => {
+    Token::Number(_) | Token::Operator(Operator::Fac) => {
+      out_que.push_back(token);
+    }
+    // unwrap constants
+    Token::Constant(c) => {
+      out_que.push_back(Token::Number(c.get_number()))
+    }
+
+    Token::Operator(Operator::Neg) => {
       op_stk.push(token);
     }
+
+    // does nothing. No point carrying it through eval
+    Token::Operator(Operator::Pos) => (),
+
     Token::Operator(op1) => {
       while let Some(Token::Operator(op2)) = op_stk.last() {
-        if matches!(op2, Operator::Neg | Operator::Pos) {
+        if matches!(op2, Operator::Neg) {
           break;
         }
 
@@ -31,9 +43,6 @@ pub fn shunting_yard(
       op_stk.push(token);
     }
     /* TODO: Token::Comma (for multi arg functions) i.e. (rand(1,2)) */
-    Token::Number(_) => {
-      out_que.push_back(token);
-    }
     Token::Function(_) | Token::LParen => {
       op_stk.push(token);
     }
@@ -76,7 +85,7 @@ pub fn parse(tokens: Vec<Token>) -> Result<VecDeque<Token>, String> {
     }
 
     if let Token::Function(name) = last {
-      return Err(format!("No function arguments for {}", name));
+      return Err(format!("No function arguments for {:?}", name));
     }
 
     out_que.push_back(last);
