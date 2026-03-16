@@ -93,6 +93,19 @@ impl Operator {
     }
   }
 
+  pub fn get_op_name(&self) -> &'static str {
+    match self {
+      Operator::Add => "+",
+      Operator::Sub => "-",
+      Operator::Neg => "U-",
+      Operator::Pos => "U+",
+      Operator::Mul => "*",
+      Operator::Div => "/",
+      Operator::Pow => "^",
+      Operator::Fac => "!",
+    }
+  }
+
   fn associativity(&self) -> Assoc {
     match self {
       Operator::Pow | Operator::Neg | Operator::Pos => Assoc::Right,
@@ -122,7 +135,7 @@ impl Operator {
       Operator::Pow => Ok(f64::powf(num1, num2)),
 
       _ => Err(format!(
-        "Invalid Operator {:?}: Must be handled during eval",
+        "Invalid Token: {:?} Must be handled during eval",
         self
       )),
     }
@@ -130,7 +143,7 @@ impl Operator {
 }
 
 impl Function {
-  fn from(name: &str) -> Result<Self, String> {
+  pub fn from(name: &str) -> Result<Self, String> {
     match name {
       "sin" => Ok(Function::Sin),
       "cos" => Ok(Function::Cos),
@@ -193,25 +206,34 @@ impl Function {
       Function::Floor => args[0].floor(),
       Function::Ceil => args[0].ceil(),
       Function::Round => args[0].round(),
-      Function::Recip => args[0].recip(),
+      Function::Recip => {
+        if args[0] == 0f64 {
+          return Err(format!(
+            "Invalid Expression: division by zero recip({0}) (1/{0})",
+            args[0]
+          ));
+        }
+
+        args[0].recip()
+      }
       Function::Cbrt => args[0].cbrt(),
       Function::Log => args[0].log10(),
     };
 
-    if !result.is_nan() {
-      Ok(result)
-    } else {
-      Err(format!(
+    if result.is_nan() {
+      return Err(format!(
         "Invalid Expression: {}({})",
         self.get_function_name(),
         args[0]
-      ))
+      ));
     }
+
+    Ok(result)
   }
 }
 
 impl Constant {
-  fn from(name: &str) -> Result<Self, String> {
+  pub fn from(name: &str) -> Result<Self, String> {
     match name.to_lowercase().as_str() {
       "pi" => Ok(Constant::PI),
       "e" => Ok(Constant::E),
@@ -248,10 +270,7 @@ impl Token {
     if c.is_alphabetic() {
       let word: String = take_while(iter, |c| c.is_alphabetic());
 
-      return Function::from(&word)
-        .map(Token::Function)
-        .or_else(|_| Constant::from(&word).map(Token::Constant))
-        .map_err(|_| format!("Invalid token: {}", word));
+      return Ok(Token::Identifier(word));
     }
 
     let result = match c {

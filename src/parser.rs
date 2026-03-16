@@ -1,6 +1,6 @@
 use std::collections::VecDeque;
 
-use crate::token::{Operator, Token};
+use crate::token::{Constant, Function, Operator, Token};
 
 pub fn shunting_yard(
   token: Token,
@@ -72,18 +72,82 @@ pub fn shunting_yard(
   Ok(())
 }
 
-fn preprocessor(tokens: Vec<Token>) -> Result<Vec<Token>, String> {
-  /*
-   * TODO:
-   * Resolve Identifier to Constant, Function, or return invalid Identifier
-   * Implicit multiplication
-   */
+fn preprocessor(tokens: Vec<Token>, ans: Option<f64>) -> Result<Vec<Token>, String> {
+  let mut result: Vec<Token> = Vec::with_capacity(tokens.len());
+  let mut iter = tokens.into_iter().peekable();
 
-  Ok(tokens)
+  while let Some(curr) = iter.next() {
+    let next = iter.peek();
+
+    match curr {
+      // Insert implicit * between number/ closing paren and Identifier/opening paren
+      // e.g. 2pi -> 2 * pi, 2(3+4) -> 2 * (3+4), etc
+      Token::Number(_) | Token::RParen
+        if matches!(next, Some(Token::Identifier(_) | Token::LParen)) =>
+      {
+        result.push(curr);
+        result.push(Token::Operator(Operator::Mul));
+      }
+
+      Token::Identifier(name) if name == "ans" => match ans {
+        Some(val) => result.push(Token::Number(val)),
+        None => return Err("Invalid Identifier: ans is not yet defined".to_string()),
+      },
+
+      // Resolve identifier to function or constant
+      Token::Identifier(name) => {
+        // expand previous answer
+
+        if let Ok(f) = Function::from(&name) {
+          result.push(Token::Function(f));
+
+          // Implicit function call: sin30 -> sin(30), sin pi -> sin(pi)
+          // Only wraps a single token. sin(30+1) requires explicit parens
+          if matches!(next, Some(Token::Number(_) | Token::Identifier(_))) {
+            result.push(Token::LParen);
+
+            let arg = iter.next().unwrap();
+            match arg {
+              Token::Identifier(name2) => {
+                let constant = Constant::from(&name2).map_err(|_| {
+                  format!(
+                    "Invalid Argument: {} is not a valid argument for {}",
+                    name2, name
+                  )
+                })?;
+
+                result.push(Token::Constant(constant));
+              }
+              _ => result.push(arg),
+            };
+
+            result.push(Token::RParen);
+          }
+        } else if let Ok(c) = Constant::from(&name) {
+          result.push(Token::Constant(c));
+
+          // Insert implicit * after constant when followed by opening paren or number
+          // e.g. pi(x) -> pi * (x), pi5 -> pi * 5
+          if matches!(next, Some(Token::LParen | Token::Number(_))) {
+            result.push(Token::Operator(Operator::Mul));
+          }
+        } else {
+          return Err(format!("Invalid Identifier: {}", name));
+        }
+      }
+      _ => result.push(curr),
+    }
+  }
+
+  Ok(result)
 }
 
-pub fn parse(tokens: Vec<Token>) -> Result<VecDeque<Token>, String> {
-  let tokens = preprocessor(tokens)?;
+pub fn parse(tokens: Vec<Token>, ans: Option<f64>) -> Result<VecDeque<Token>, String> {
+  if tokens.is_empty() {
+    return Err("Invalid Expression: no expression to parse".to_string());
+  }
+
+  let tokens = preprocessor(tokens, ans)?;
 
   let mut op_stk: Vec<Token> = Vec::new();
   let mut out_que: VecDeque<Token> = VecDeque::new();

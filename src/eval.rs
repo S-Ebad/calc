@@ -23,6 +23,7 @@ pub fn eval(mut tokens: VecDeque<Token>) -> Result<f64, String> {
         Some(num) => sum_stk.push(-num),
         None => return Err("Invalid Operand: negation requires an operand.".to_string()),
       },
+
       Token::Operator(Operator::Fac) => match sum_stk.pop() {
         Some(num) => sum_stk.push(factorial(num)?),
         None => return Err("Invalid Operand: factorial requires an operand".to_string()),
@@ -34,14 +35,19 @@ pub fn eval(mut tokens: VecDeque<Token>) -> Result<f64, String> {
           _ => return Err("Invalid Expression: not enough operands".to_string()),
         };
 
-        sum_stk.push(op.perform_op(num1, num2)?);
+        let result = op.perform_op(num1, num2)?;
+        if result.is_nan() {
+          return Err(format!("Invalid Expression: {} {} {} is NaN", num1, op.get_op_name(), num2));
+        }
+
+        sum_stk.push(result);
       }
 
       Token::Number(num) => sum_stk.push(num),
       Token::Function(func) => {
         let arg = match sum_stk.pop() {
           Some(n) => n,
-          None => return Err(format!("Invalid Argument: {:?} requires an argument", func)),
+          None => return Err(format!("Invalid Argument: {} requires an argument", func.get_function_name())),
         };
 
         sum_stk.push(func.call_function(&[arg])?);
@@ -49,7 +55,7 @@ pub fn eval(mut tokens: VecDeque<Token>) -> Result<f64, String> {
 
       _ => {
         return Err(format!(
-          "Invalid Token {:?}: Must be handled during parser",
+          "Invalid Token: {:?} Must be handled during parser",
           token
         ));
       }
