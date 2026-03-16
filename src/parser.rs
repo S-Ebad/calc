@@ -12,9 +12,7 @@ pub fn shunting_yard(
       out_que.push_back(token);
     }
     // unwrap constants
-    Token::Constant(c) => {
-      out_que.push_back(Token::Number(c.get_number()))
-    }
+    Token::Constant(c) => out_que.push_back(Token::Number(c.get_number())),
 
     Token::Operator(Operator::Neg) => {
       op_stk.push(token);
@@ -25,14 +23,12 @@ pub fn shunting_yard(
 
     Token::Operator(op1) => {
       while let Some(Token::Operator(op2)) = op_stk.last() {
-        if matches!(op2, Operator::Neg) {
-          break;
-        }
-
         if (op2.precedence() > op1.precedence())
           || (op2.precedence() == op1.precedence() && op1.is_left_assoc())
         {
-          let last = op_stk.pop().expect("Stack underflow");
+          let last = op_stk
+            .pop()
+            .ok_or(format!("Invalid state: operator stack underflow"))?;
 
           out_que.push_back(last);
         } else {
@@ -52,13 +48,16 @@ pub fn shunting_yard(
           break;
         }
 
-        let last = op_stk.pop().expect("Stack underflow");
+        let last = op_stk
+          .pop()
+          .ok_or(format!("Invalid state: operator stack underflow"))?;
+
         out_que.push_back(last);
       }
 
       // MUST pop parentheses
       if op_stk.pop().is_none() {
-        return Err(format!("Mismatched parentheses"));
+        return Err(format!("Invalid Expression: mismatched parentheses"));
       }
 
       // check if the parentheses was function
@@ -66,12 +65,26 @@ pub fn shunting_yard(
         out_que.push_back(op_stk.pop().unwrap());
       }
     }
+
+    Token::Identifier(_) => (),
   }
 
   Ok(())
 }
 
+fn preprocessor(tokens: Vec<Token>) -> Result<Vec<Token>, String> {
+  /*
+   * TODO:
+   * Resolve Identifier to Constant, Function, or return invalid Identifier
+   * Implicit multiplication
+   */
+
+  Ok(tokens)
+}
+
 pub fn parse(tokens: Vec<Token>) -> Result<VecDeque<Token>, String> {
+  let tokens = preprocessor(tokens)?;
+
   let mut op_stk: Vec<Token> = Vec::new();
   let mut out_que: VecDeque<Token> = VecDeque::new();
 
@@ -81,11 +94,14 @@ pub fn parse(tokens: Vec<Token>) -> Result<VecDeque<Token>, String> {
 
   while let Some(last) = op_stk.pop() {
     if matches!(last, Token::RParen | Token::LParen) {
-      return Err(format!("Unclosed Parentheses"));
+      return Err(format!("Invalid Expression: unclosed parentheses"));
     }
 
-    if let Token::Function(name) = last {
-      return Err(format!("No function arguments for {:?}", name));
+    if let Token::Function(func) = last {
+      return Err(format!(
+        "Invalid Expression: no arguments for {}",
+        func.get_function_name()
+      ));
     }
 
     out_que.push_back(last);
