@@ -1,6 +1,8 @@
 use core::f64;
 use std::{iter::Peekable, str::Chars};
 
+use crate::calc::Calculator;
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Operator {
   Add, // Binary+
@@ -47,7 +49,7 @@ pub enum Constant {
 pub enum Token {
   Operator(Operator),
   Number(f64),
-  Identifier(String), // a word is an identifier before being a function/constant
+  Identifier(String), // a word is an identifier before being a function/constant/variable
   Function(Function),
   Constant(Constant),
   LParen,
@@ -312,7 +314,7 @@ where
   s
 }
 
-pub fn to_f64(iter: &mut Peekable<Chars>) -> Result<f64, String> {
+fn to_f64(iter: &mut Peekable<Chars>) -> Result<f64, String> {
   let mut num = take_while(iter, |c| c.is_numeric() || c == '.');
 
   // differentiate between 9 * e (euler's number) and 9e9
@@ -351,21 +353,23 @@ pub fn to_f64(iter: &mut Peekable<Chars>) -> Result<f64, String> {
   }
 }
 
-pub fn tokenize(expr: &str) -> Result<Vec<Token>, String> {
-  let mut tokens = Vec::<Token>::new();
+impl Calculator {
+  pub fn tokenize(expr: &str) -> Result<Vec<Token>, String> {
+    let mut tokens = Vec::<Token>::new();
 
-  let mut iter = expr.chars().peekable();
+    let mut iter = expr.chars().peekable();
 
-  while let Some(&c) = iter.peek() {
-    // skip whitespace
-    if c.is_whitespace() {
-      iter.next();
+    while let Some(&c) = iter.peek() {
+      // skip whitespace
+      if c.is_whitespace() {
+        iter.next();
 
-      continue;
+        continue;
+      }
+
+      tokens.push(Token::from(c, &mut iter, tokens.last())?);
     }
 
-    tokens.push(Token::from(c, &mut iter, tokens.last())?);
+    Ok(tokens)
   }
-
-  Ok(tokens)
 }

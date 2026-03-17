@@ -1,3 +1,4 @@
+mod calc;
 mod eval;
 mod parser;
 mod token;
@@ -7,11 +8,12 @@ use std::{
   process,
 };
 
-use crate::{eval::eval, parser::parse, token::tokenize};
+use crate::calc::Calculator;
 
 fn main() {
   let mut buf = String::new();
-  let mut ans: Option<f64> = None;
+
+  let mut calculator = Calculator::new();
 
   loop {
     buf.clear();
@@ -32,15 +34,8 @@ fn main() {
       break;
     }
 
-    match tokenize(&buf)
-      .and_then(|tokens| parse(tokens, ans))
-      .and_then(|tokens| eval(tokens))
-    {
-      Ok(sum) => {
-        ans = Some(sum);
-
-        println!("= {}", sum);
-      }
+    match calculator.solve(&buf) {
+      Ok(ans) => println!("= {}", ans),
       Err(err) => eprintln!("Error: {}", err),
     }
   }
