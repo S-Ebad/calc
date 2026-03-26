@@ -40,15 +40,7 @@ impl Calculator {
           };
 
           let result = op.perform_op(num1, num2)?;
-          if result.is_nan() {
-            return Err(format!(
-              "Invalid Expression: {} {} {} is NaN",
-              num1,
-              op.get_op_name(),
-              num2
-            ));
-          }
-
+ 
           sum_stk.push(result);
         }
 

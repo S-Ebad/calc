@@ -1,3 +1,5 @@
+use std::fmt;
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Function {
   // 1-arg functions
@@ -43,29 +45,7 @@ impl Function {
     }
   }
 
-  pub fn get_function_name(&self) -> &'static str {
-    use Function as F;
-    match self {
-      F::Sin => "sin",
-      F::Cos => "cos",
-      F::Tan => "tan",
-      F::Sqrt => "sqrt",
-      F::Abs => "abs",
-      F::Ln => "ln",
-      F::Exp => "exp",
-      F::Floor => "floor",
-      F::Ceil => "ceil",
-      F::Round => "round",
-      F::Recip => "recip",
-      F::Cbrt => "cbrt",
-      F::Log => "log",
-      F::Max => "max",
-      F::Min => "min",
-      F::Pow => "pow",
-    }
-  }
-
-  // returns arity of each function. 0xFF represents any number of arguments EXCEPT 0
+  // Returns the (min, max) accepted argument count for this function.
   pub fn arity(&self) -> (usize, usize) {
     use Function as F;
 
@@ -93,7 +73,7 @@ impl Function {
 
       return Err(format!(
         "Invalid Arguments: {} takes {} argument(s) but got {}",
-        self.get_function_name(),
+        self,
         arity_str,
         args.len()
       ));
@@ -145,13 +125,36 @@ impl Function {
     };
 
     if result.is_nan() {
-      return Err(format!(
-        "Invalid Expression: {}({})",
-        self.get_function_name(),
-        args[0]
-      ));
+      return Err(format!("Invalid Expression: {}({})", self, args[0]));
     }
 
     Ok(result)
+  }
+}
+
+impl fmt::Display for Function {
+  fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    use Function as F;
+
+    let name = match self {
+      F::Sin => "sin",
+      F::Cos => "cos",
+      F::Tan => "tan",
+      F::Sqrt => "sqrt",
+      F::Abs => "abs",
+      F::Ln => "ln",
+      F::Exp => "exp",
+      F::Floor => "floor",
+      F::Ceil => "ceil",
+      F::Round => "round",
+      F::Recip => "recip",
+      F::Cbrt => "cbrt",
+      F::Log => "log",
+      F::Max => "max",
+      F::Min => "min",
+      F::Pow => "pow",
+    };
+
+    write!(f, "{}", name)
   }
 }

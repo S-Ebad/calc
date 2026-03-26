@@ -74,20 +74,6 @@ impl Operator {
     }
   }
 
-  pub fn get_op_name(&self) -> &'static str {
-    match self {
-      Operator::Add => "+",
-      Operator::Sub => "-",
-      Operator::Neg => "U-",
-      Operator::Pos => "U+",
-      Operator::Mul => "*",
-      Operator::Div => "/",
-      Operator::Pow => "^",
-      Operator::Fac => "!",
-      Operator::Mod => "%",
-    }
-  }
-
   fn associativity(&self) -> Assoc {
     match self {
       Operator::Pow | Operator::Neg | Operator::Pos => Assoc::Right,
@@ -100,28 +86,62 @@ impl Operator {
   }
 
   pub fn perform_op(&self, num1: f64, num2: f64) -> Result<f64, String> {
-    match self {
-      Operator::Add => Ok(num1 + num2),
-      Operator::Sub => Ok(num1 - num2),
-      Operator::Mul => Ok(num1 * num2),
-      Operator::Mod => Ok(num1 % num2),
-      Operator::Div => {
+    use Operator as OP;
+
+    let result = match self {
+      OP::Add => num1 + num2,
+      OP::Sub => num1 - num2,
+      OP::Mul => num1 * num2,
+      OP::Mod => num1 % num2,
+
+      OP::Div => {
         if num2 == 0f64 {
-          Err(format!(
+          return Err(format!(
             "Invalid Expression: division by zero ({}/{})",
             num1, num2
-          ))
-        } else {
-          Ok(num1 / num2)
+          ));
         }
-      }
-      Operator::Pow => Ok(f64::powf(num1, num2)),
 
-      _ => Err(format!(
-        "Invalid Token: {:?} Must be handled during parser",
-        self
-      )),
+        num1 / num2
+      }
+
+      OP::Pow => f64::powf(num1, num2),
+
+      _ => {
+        return Err(format!(
+          "Invalid Token: {:?} Must be handled during parser",
+          self
+        ));
+      }
+    };
+
+    if result.is_nan() {
+      return Err(format!(
+        "Invalid Expression: {} {} {} is NaN",
+        num1, self, num2
+      ));
     }
+
+    Ok(result)
+  }
+}
+
+impl std::fmt::Display for Operator {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    use Operator as OP;
+    let name = match self {
+      OP::Add => "+",
+      OP::Sub => "-",
+      OP::Neg => "U-",
+      OP::Pos => "U+",
+      OP::Mul => "*",
+      OP::Div => "/",
+      OP::Pow => "^",
+      OP::Fac => "!",
+      OP::Mod => "%",
+    };
+
+    write!(f, "{}", name)
   }
 }
 

@@ -204,10 +204,7 @@ impl Calculator {
       }
 
       if let Token::Function(func) = last {
-        return Err(format!(
-          "Invalid Expression: no arguments for {}",
-          func.get_function_name()
-        ));
+        return Err(format!("Invalid Expression: no arguments for {}", func));
       }
 
       out_que.push_back(last);

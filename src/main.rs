@@ -1,6 +1,6 @@
-mod function;
 mod calc;
 mod eval;
+mod function;
 mod parser;
 mod token;
 
