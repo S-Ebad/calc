@@ -1,7 +1,6 @@
-use core::f64;
-use std::{iter::Peekable, str::Chars};
+use std::{f64, iter::Peekable, str::Chars};
 
-use crate::calc::Calculator;
+use crate::{calc::Calculator, function::Function};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Operator {
@@ -13,29 +12,7 @@ pub enum Operator {
   Div,
   Pow,
   Fac, // Factorial
-}
-
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum Function {
-  // 1-arg functions
-  Sin,
-  Cos,
-  Tan,
-  Sqrt,
-  Abs,
-  Ln,
-  Exp,
-  Floor,
-  Ceil,
-  Round,
-  Recip,
-  Cbrt,
-  Log,
-  // 2-arg functions
-  // LogBase,
-  // Max,
-  // Min,
-  // Pow, // it is x ^ y by default but can also be called via pow(x, y)
+  Mod, // modulos
 }
 
 #[derive(Debug, Copy, Clone, PartialEq)]
@@ -52,6 +29,7 @@ pub enum Token {
   Identifier(String), // a word is an identifier before being a function/constant/variable
   Function(Function),
   Constant(Constant),
+  Comma,
   LParen,
   RParen,
 }
@@ -64,31 +42,32 @@ pub enum Assoc {
 
 impl Operator {
   // get operator from char. last_token is needed for Unary
-  pub fn from(c: char, last_token: Option<&Token>) -> Option<Self> {
+  pub fn from(c: char, last_token: Option<&Token>) -> Result<Self, String> {
     // is unary?
     if is_unary(c, last_token) {
       return if c == '-' {
-        Some(Operator::Neg)
+        Ok(Operator::Neg)
       } else {
-        Some(Operator::Pos)
+        Ok(Operator::Pos)
       };
     }
 
     match c {
-      '+' => Some(Operator::Add),
-      '-' => Some(Operator::Sub),
-      '/' => Some(Operator::Div),
-      '*' => Some(Operator::Mul),
-      '^' => Some(Operator::Pow),
-      '!' => Some(Operator::Fac),
-      _ => None,
+      '+' => Ok(Operator::Add),
+      '-' => Ok(Operator::Sub),
+      '/' => Ok(Operator::Div),
+      '*' => Ok(Operator::Mul),
+      '^' => Ok(Operator::Pow),
+      '!' => Ok(Operator::Fac),
+      '%' => Ok(Operator::Mod),
+      _ => Err(format!("Invalid Operator: {}", c)),
     }
   }
 
   pub fn precedence(&self) -> u16 {
     match self {
       Operator::Add | Operator::Sub => 1,
-      Operator::Mul | Operator::Div => 2,
+      Operator::Mul | Operator::Div | Operator::Mod => 2,
       Operator::Neg | Operator::Pos => 3,
       Operator::Pow => 4,
       Operator::Fac => 5,
@@ -105,6 +84,7 @@ impl Operator {
       Operator::Div => "/",
       Operator::Pow => "^",
       Operator::Fac => "!",
+      Operator::Mod => "%",
     }
   }
 
@@ -124,6 +104,7 @@ impl Operator {
       Operator::Add => Ok(num1 + num2),
       Operator::Sub => Ok(num1 - num2),
       Operator::Mul => Ok(num1 * num2),
+      Operator::Mod => Ok(num1 % num2),
       Operator::Div => {
         if num2 == 0f64 {
           Err(format!(
@@ -137,100 +118,10 @@ impl Operator {
       Operator::Pow => Ok(f64::powf(num1, num2)),
 
       _ => Err(format!(
-        "Invalid Token: {:?} Must be handled during eval",
+        "Invalid Token: {:?} Must be handled during parser",
         self
       )),
     }
-  }
-}
-
-impl Function {
-  pub fn from(name: &str) -> Result<Self, String> {
-    match name {
-      "sin" => Ok(Function::Sin),
-      "cos" => Ok(Function::Cos),
-      "tan" => Ok(Function::Tan),
-      "sqrt" => Ok(Function::Sqrt),
-      "abs" => Ok(Function::Abs),
-      "ln" => Ok(Function::Ln),
-      "exp" => Ok(Function::Exp),
-      "floor" => Ok(Function::Floor),
-      "ceil" => Ok(Function::Ceil),
-      "round" => Ok(Function::Round),
-      "recip" => Ok(Function::Recip),
-      "cbrt" => Ok(Function::Cbrt),
-      "log" => Ok(Function::Log),
-      _ => Err(format!("Invalid Function: {}", name)),
-    }
-  }
-
-  pub fn get_function_name(&self) -> &'static str {
-    match self {
-      Function::Sin => "sin",
-      Function::Cos => "cos",
-      Function::Tan => "tan",
-      Function::Sqrt => "sqrt",
-      Function::Abs => "abs",
-      Function::Ln => "ln",
-      Function::Exp => "exp",
-      Function::Floor => "floor",
-      Function::Ceil => "ceil",
-      Function::Round => "round",
-      Function::Recip => "recip",
-      Function::Cbrt => "cbrt",
-      Function::Log => "log",
-    }
-  }
-
-  pub fn arity(&self) -> usize {
-    // all of them only have 1 argument for now
-    1
-  }
-
-  pub fn call_function(&self, args: &[f64]) -> Result<f64, String> {
-    if args.len() != self.arity() {
-      return Err(format!(
-        "Invalid Arguments: {} takes {} but got {}",
-        self.get_function_name(),
-        self.arity(),
-        args.len()
-      ));
-    }
-
-    let result = match self {
-      Function::Sin => args[0].sin(),
-      Function::Cos => args[0].cos(),
-      Function::Tan => args[0].tan(),
-      Function::Sqrt => args[0].sqrt(),
-      Function::Abs => args[0].abs(),
-      Function::Ln => args[0].ln(),
-      Function::Exp => args[0].exp(),
-      Function::Floor => args[0].floor(),
-      Function::Ceil => args[0].ceil(),
-      Function::Round => args[0].round(),
-      Function::Recip => {
-        if args[0] == 0f64 {
-          return Err(format!(
-            "Invalid Expression: division by zero recip({0}) (1/{0})",
-            args[0]
-          ));
-        }
-
-        args[0].recip()
-      }
-      Function::Cbrt => args[0].cbrt(),
-      Function::Log => args[0].log10(),
-    };
-
-    if result.is_nan() {
-      return Err(format!(
-        "Invalid Expression: {}({})",
-        self.get_function_name(),
-        args[0]
-      ));
-    }
-
-    Ok(result)
   }
 }
 
@@ -259,7 +150,7 @@ impl Token {
     iter: &mut Peekable<Chars>,
     last_token: Option<&Token>,
   ) -> Result<Self, String> {
-    if let Some(op) = Operator::from(c, last_token) {
+    if let Ok(op) = Operator::from(c, last_token) {
       iter.next();
 
       return Ok(Token::Operator(op));
@@ -278,6 +169,7 @@ impl Token {
     let result = match c {
       '(' => Ok(Token::LParen),
       ')' => Ok(Token::RParen),
+      ',' => Ok(Token::Comma),
 
       _ => Err(format!("Invalid Token: '{}'", c)),
     };

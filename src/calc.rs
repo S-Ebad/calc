@@ -20,7 +20,6 @@ impl Calculator {
       .and_then(|tokens| self.parse(tokens))
       .and_then(|tokens| self.eval(tokens));
 
-
     if let Ok(ans) = result {
       self.add_variable("ans", ans);
     }

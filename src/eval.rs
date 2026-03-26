@@ -53,18 +53,24 @@ impl Calculator {
         }
 
         Token::Number(num) => sum_stk.push(num),
-        Token::Function(func) => {
-          let arg = match sum_stk.pop() {
-            Some(n) => n,
-            None => {
-              return Err(format!(
-                "Invalid Argument: {} requires an argument",
-                func.get_function_name()
-              ));
-            }
-          };
 
-          sum_stk.push(func.call_function(&[arg])?);
+        Token::Function(func) => {
+          let arg_count = sum_stk
+            .pop()
+            .ok_or("Invalid Argument: argument count not supplied")?
+            as usize;
+
+          if arg_count > sum_stk.len() {
+            return Err("Invalid Arguments: not enough arguments supplied".to_string());
+          }
+
+          let mut args: Vec<f64> = Vec::with_capacity(arg_count);
+
+          for _ in 0..arg_count {
+            args.insert(0, sum_stk.pop().unwrap());
+          }
+
+          sum_stk.push(func.call(&args)?);
         }
 
         _ => {

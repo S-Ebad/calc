@@ -2,26 +2,34 @@ use std::collections::VecDeque;
 
 use crate::{
   calc::Calculator,
-  token::{Constant, Function, Operator, Token},
+  function::Function,
+  token::{Constant, Operator, Token},
 };
 
 fn shunting_yard(
   token: Token,
   op_stk: &mut Vec<Token>,
   out_que: &mut VecDeque<Token>,
+  arg_stk: &mut Vec<u16>,
 ) -> Result<(), String> {
   match token {
     Token::Number(_) | Token::Operator(Operator::Fac) => {
       out_que.push_back(token);
     }
-    // unwrap constants
-    // Token::Constant(c) => out_que.push_back(Token::Number(c.get_number())),
     Token::Operator(Operator::Neg) => {
       op_stk.push(token);
     }
 
     // does nothing. No point carrying it through eval
-    Token::Operator(Operator::Pos) | Token::Identifier(_) | Token::Constant(_) => (),
+    Token::Operator(Operator::Pos) => (),
+
+    // Should be handled during preprocessor
+    Token::Identifier(_) | Token::Constant(_) => {
+      return Err(format!(
+        "Invalid Token: {:?} Must be handled during preprocessor",
+        token
+      ));
+    }
 
     Token::Operator(op1) => {
       while let Some(Token::Operator(op2)) = op_stk.last() {
@@ -40,10 +48,39 @@ fn shunting_yard(
 
       op_stk.push(token);
     }
-    /* TODO: Token::Comma (for multi arg functions) i.e. (rand(1,2)) */
-    Token::Function(_) | Token::LParen => {
+
+    Token::Comma => {
+      while let Some(token) = op_stk.last() {
+        if matches!(token, Token::LParen) {
+          break;
+        }
+
+        let last = op_stk.pop().ok_or("")?;
+
+        out_que.push_back(last);
+      }
+
+      if op_stk.is_empty() {
+        return Err("Error misplaced comma".to_string());
+      }
+
+      match arg_stk.last_mut() {
+        Some(num) => *num += 1,
+        None => {
+          return Err("Invalid use of comma".to_string());
+        }
+      };
+    }
+
+    Token::Function(_) => {
+      op_stk.push(token);
+      arg_stk.push(1);
+    }
+
+    Token::LParen => {
       op_stk.push(token);
     }
+
     Token::RParen => {
       while let Some(top) = op_stk.last() {
         if matches!(top, Token::LParen) {
@@ -64,6 +101,9 @@ fn shunting_yard(
 
       // check if the parentheses was function
       if matches!(op_stk.last(), Some(Token::Function(_))) {
+        let arg_count = arg_stk.pop().unwrap_or(1);
+
+        out_que.push_back(Token::Number(arg_count as f64));
         out_que.push_back(op_stk.pop().unwrap());
       }
     }
@@ -152,9 +192,10 @@ impl Calculator {
 
     let mut op_stk: Vec<Token> = Vec::new();
     let mut out_que: VecDeque<Token> = VecDeque::new();
+    let mut arg_stk: Vec<u16> = Vec::new();
 
     for token in tokens.into_iter() {
-      shunting_yard(token, &mut op_stk, &mut out_que)?;
+      shunting_yard(token, &mut op_stk, &mut out_que, &mut arg_stk)?;
     }
 
     while let Some(last) = op_stk.pop() {

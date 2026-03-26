@@ -1,3 +1,4 @@
+mod function;
 mod calc;
 mod eval;
 mod parser;
