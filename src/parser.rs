@@ -16,6 +16,11 @@ fn shunting_yard(
     Token::Number(_) | Token::Operator(Operator::Fac) => {
       out_que.push_back(token);
     }
+
+    Token::Constant(con) => {
+      out_que.push_back(Token::Number(con.get_number()));
+    }
+
     Token::Operator(Operator::Neg) => {
       op_stk.push(token);
     }
@@ -24,7 +29,7 @@ fn shunting_yard(
     Token::Operator(Operator::Pos) => (),
 
     // Should be handled during preprocessor
-    Token::Identifier(_) | Token::Constant(_) => {
+    Token::Identifier(_) => {
       return Err(format!(
         "Invalid Token: {:?} Must be handled during preprocessor",
         token
@@ -107,6 +112,10 @@ fn shunting_yard(
         out_que.push_back(op_stk.pop().unwrap());
       }
     }
+
+    Token::Assign => {
+      return Err("Invalid Token: Assignment must be handled during preprocessor".to_string());
+    }
   }
 
   Ok(())
@@ -122,6 +131,12 @@ impl Calculator {
       let next = iter.peek();
 
       match curr {
+        // Insert implicit * between closing paren & number. e.g: (10)5
+        Token::RParen if matches!(next, Some(Token::Number(_))) => {
+          result.push(curr);
+          result.push(Token::Operator(Operator::Mul));
+        }
+
         // Insert implicit * between number/ closing paren and Identifier/opening paren
         // e.g. 2pi -> 2 * pi, 2(3+4) -> 2 * (3+4), etc
         Token::Number(_) | Token::RParen
@@ -129,6 +144,10 @@ impl Calculator {
         {
           result.push(curr);
           result.push(Token::Operator(Operator::Mul));
+        }
+
+        Token::Assign => {
+          return Err("Invalid Assign: invalid use of assignment".to_string());
         }
 
         // Resolve identifier to function or constant
@@ -142,6 +161,7 @@ impl Calculator {
               result.push(Token::LParen);
 
               let arg = iter.next().unwrap();
+
               match arg {
                 Token::Identifier(name2) => {
                   let constant = Constant::from(&name2).map_err(|_| {
@@ -153,6 +173,7 @@ impl Calculator {
 
                   result.push(Token::Constant(constant));
                 }
+
                 _ => result.push(arg),
               };
 

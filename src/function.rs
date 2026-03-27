@@ -16,6 +16,8 @@ pub enum Function {
   Recip,
   Cbrt,
   Log,
+  Rad,
+  Deg,
   Pow,
   Max,
   Min,
@@ -41,6 +43,8 @@ impl Function {
       "max" => Ok(F::Max),
       "min" => Ok(F::Min),
       "pow" => Ok(F::Pow),
+      "deg" => Ok(F::Deg),
+      "rad" => Ok(F::Rad),
       _ => Err(format!("Invalid Function: {}", name)),
     }
   }
@@ -53,6 +57,7 @@ impl Function {
       F::Max | F::Min => (2, usize::MAX),
       F::Sqrt | F::Log => (1, 2),
       F::Pow => (2, 2),
+
       _ => (1, 1),
     }
   }
@@ -122,9 +127,14 @@ impl Function {
         .reduce(f64::min)
         .ok_or("Function Error: min function has thrown an error")?,
       F::Pow => args[0].powf(args[1]),
+
+      F::Rad => args[0].to_radians(),
+      F::Deg => args[0].to_degrees(),
     };
 
     if result.is_nan() {
+      // BUG: if function has more than 1 argument, it'll only display the first argument
+      // i.e: sqrt(-1, 3) (cube root -1) will result in "Invalid Expression: sqrt(-3)" completely ignoring root
       return Err(format!("Invalid Expression: {}({})", self, args[0]));
     }
 
@@ -153,6 +163,8 @@ impl fmt::Display for Function {
       F::Max => "max",
       F::Min => "min",
       F::Pow => "pow",
+      F::Rad => "rad",
+      F::Deg => "deg",
     };
 
     write!(f, "{}", name)

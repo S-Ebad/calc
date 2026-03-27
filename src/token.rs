@@ -22,13 +22,14 @@ pub enum Constant {
   INF, // infinity
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum Token {
   Operator(Operator),
   Number(f64),
   Identifier(String), // a word is an identifier before being a function/constant/variable
   Function(Function),
   Constant(Constant),
+  Assign, // equal
   Comma,
   LParen,
   RParen,
@@ -105,6 +106,7 @@ impl Operator {
         num1 / num2
       }
 
+      // BUG: 0 ^ -1 results in infinity. Should be an error since 0 ^ -1 is 1/0 (division zero error)
       OP::Pow => f64::powf(num1, num2),
 
       _ => {
@@ -190,6 +192,7 @@ impl Token {
       '(' => Ok(Token::LParen),
       ')' => Ok(Token::RParen),
       ',' => Ok(Token::Comma),
+      '=' => Ok(Token::Assign),
 
       _ => Err(format!("Invalid Token: '{}'", c)),
     };

@@ -1,5 +1,7 @@
 use std::collections::HashMap;
 
+use crate::token::Token;
+
 pub struct Calculator {
   pub variables: HashMap<String, f64>,
 }
@@ -16,14 +18,29 @@ impl Calculator {
   }
 
   pub fn solve(&mut self, buf: &str) -> Result<f64, String> {
-    let result = Self::tokenize(buf)
-      .and_then(|tokens| self.parse(tokens))
-      .and_then(|tokens| self.eval(tokens));
+    let mut tokens = Self::tokenize(buf)?;
 
-    if let Ok(ans) = result {
-      self.add_variable("ans", ans);
+    let assign_to = if let [Token::Identifier(_), Token::Assign, ..] = tokens.as_slice() {
+      let Token::Identifier(name) = tokens.remove(0) else {
+        unreachable!()
+      };
+
+      tokens.remove(0); // remove assign
+
+      Some(name)
+    } else {
+      None
+    };
+
+    let result = self.parse(tokens)
+      .and_then(|rpn| self.eval(rpn))?;
+
+    if let Some(name) = assign_to {
+      self.add_variable(&name, result);
     }
 
-    result
+    self.add_variable("ans", result);
+
+    Ok(result)
   }
 }
