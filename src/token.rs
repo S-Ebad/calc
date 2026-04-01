@@ -106,8 +106,17 @@ impl Operator {
         num1 / num2
       }
 
-      // BUG: 0 ^ -1 results in infinity. Should be an error since 0 ^ -1 is 1/0 (division zero error)
-      OP::Pow => f64::powf(num1, num2),
+      OP::Pow => {
+        // num1 ^ -num2 where num1 is 0 is undefined 
+        if num1 == 0f64 && num2 <= 0f64 {
+          return Err(format!(
+            "Invalid Expression: division by zero ({0}^{1} = 1/({0}^{2}) = 1 / {0})",
+            num1, num2, num2.abs()
+          ))
+        }
+
+        f64::powf(num1, num2)
+      }
 
       _ => {
         return Err(format!(
@@ -206,7 +215,7 @@ fn is_unary(c: char, last_token: Option<&Token>) -> bool {
   (c == '-' || c == '+')
     && matches!(
       last_token,
-      None | Some(Token::LParen) | Some(Token::Operator(_))
+      None | Some(Token::LParen | Token::Operator(_) | Token::Comma)
     )
 }
 

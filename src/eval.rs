@@ -19,6 +19,7 @@ fn factorial(n: f64) -> Result<f64, String> {
 
 impl Calculator {
   pub fn eval(&mut self, mut tokens: VecDeque<Token>) -> Result<f64, String> {
+    // println!("{:?}", tokens);
     let mut sum_stk: Vec<f64> = Vec::new();
 
     while let Some(token) = tokens.pop_front() {

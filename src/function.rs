@@ -1,4 +1,4 @@
-use std::fmt;
+use std::{f64, fmt};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Function {
@@ -87,7 +87,19 @@ impl Function {
     let result = match self {
       F::Sin => args[0].sin(),
       F::Cos => args[0].cos(),
-      F::Tan => args[0].tan(),
+      F::Tan => {
+        let normalized = (args[0] / f64::consts::FRAC_PI_2).round();
+        if (args[0] - normalized * f64::consts::FRAC_PI_2).abs() < f64::EPSILON
+          && normalized as i64 % 2 != 0
+        {
+          return Err(format!(
+            "Invalid Expression: tan({}) is undefined (asymptote",
+            args[0]
+          ));
+        }
+
+        args[0].tan()
+      }
       F::Abs => args[0].abs(),
       F::Ln => args[0].ln(),
       F::Exp => args[0].exp(),
@@ -97,18 +109,28 @@ impl Function {
       F::Cbrt => args[0].cbrt(),
       F::Recip => {
         if args[0] == 0f64 {
-          return Err(format!(
-            "Invalid Expression: division by zero recip({0}) (1/{0})",
-            args[0]
-          ));
+          return Err("Invalid Expression: division by zero recip(0) (1/0)".to_string());
         }
 
         args[0].recip()
       }
       F::Sqrt => {
         let root = if args.len() == 2 { args[1] } else { 2.0 };
+        let x = args[0];
 
-        args[0].powf(1.0 / root)
+        if root == 0f64 {
+          return Err(format!(
+            "Invalid Expression: division by zero (sqrt({0}, 0) = {0}^(1/0))",
+            x
+          ));
+        }
+
+        if x < 0.0 && root.fract() == 0.0 && (root as i64) % 2 != 0 {
+          // odd integer root of neg numbers
+          -(-x).powf(1.0 / root)
+        } else {
+          x.powf(1.0 / root)
+        }
       }
       F::Log => {
         let base = if args.len() == 2 { args[1] } else { 10.0 };
@@ -133,9 +155,15 @@ impl Function {
     };
 
     if result.is_nan() {
-      // BUG: if function has more than 1 argument, it'll only display the first argument
-      // i.e: sqrt(-1, 3) (cube root -1) will result in "Invalid Expression: sqrt(-3)" completely ignoring root
-      return Err(format!("Invalid Expression: {}({})", self, args[0]));
+      return Err(format!(
+        "Invalid Expression: {}({}) results in NaN",
+        self,
+        args
+          .iter()
+          .map(|x| x.to_string())
+          .collect::<Vec<String>>()
+          .join(", ")
+      ));
     }
 
     Ok(result)
