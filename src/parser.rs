@@ -3,7 +3,8 @@ use std::collections::VecDeque;
 use crate::{
   calc::Calculator,
   function::Function,
-  token::{Constant, Operator, Token},
+  operator::Operator,
+  token::{Constant, Token},
 };
 
 fn shunting_yard(

@@ -1,6 +1,7 @@
 mod calc;
 mod eval;
 mod function;
+mod operator;
 mod parser;
 mod token;
 
@@ -12,12 +13,12 @@ use std::{
 use crate::calc::Calculator;
 
 // this formats the number in 10 decimal place.
-// So equations like 0.1+0.2 don't result in 0.30000000000000004 
+// So equations like 0.1+0.2 don't result in 0.30000000000000004
 fn format_num(n: f64) -> String {
   let mut s = format!("{:.10}", n);
 
   if s.contains('.') {
-    while s.ends_with('0'){
+    while s.ends_with('0') {
       s.pop();
     }
 

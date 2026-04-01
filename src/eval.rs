@@ -1,9 +1,6 @@
 use std::collections::VecDeque;
 
-use crate::{
-  calc::Calculator,
-  token::{Operator, Token},
-};
+use crate::{calc::Calculator, operator::Operator, token::Token};
 
 fn factorial(n: f64) -> Result<f64, String> {
   if n < 0.0 || n.fract() != 0.0 {
@@ -19,7 +16,6 @@ fn factorial(n: f64) -> Result<f64, String> {
 
 impl Calculator {
   pub fn eval(&mut self, mut tokens: VecDeque<Token>) -> Result<f64, String> {
-    // println!("{:?}", tokens);
     let mut sum_stk: Vec<f64> = Vec::new();
 
     while let Some(token) = tokens.pop_front() {
@@ -41,7 +37,7 @@ impl Calculator {
           };
 
           let result = op.perform_op(num1, num2)?;
- 
+
           sum_stk.push(result);
         }
 
