@@ -244,7 +244,6 @@ impl Calculator {
         }
 
         let tokens = self.preprocessor(tokens)?;
-        println!("{:?}", tokens);
 
         let mut op_stk: Vec<Token> = Vec::new();
         let mut out_que: VecDeque<Token> = VecDeque::new();
@@ -266,7 +265,6 @@ impl Calculator {
             out_que.push_back(last);
         }
 
-        println!("{:?}", out_que);
         Ok(out_que)
     }
 }
