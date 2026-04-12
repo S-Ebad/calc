@@ -86,7 +86,7 @@ impl Operator {
 
             OP::Pow => {
                 // num1 ^ -num2 where num1 is 0 is undefined
-                if num1 == 0f64 && num2 <= 0f64 {
+                if num1 == 0f64 && num2 < 0f64 {
                     return Err(format!(
                         "Invalid Expression: division by zero ({0}^{1} = 1/({0}^{2}) = 1 / {0})",
                         num1,
@@ -137,9 +137,15 @@ impl std::fmt::Display for Operator {
 }
 
 fn is_unary(c: char, last_token: Option<&Token>) -> bool {
-    (c == '-' || c == '+')
-        && matches!(
-            last_token,
-            None | Some(Token::LParen | Token::Operator(_) | Token::Comma)
-        )
+    if c != '-' && c != '+' {
+        return false;
+    }
+    match last_token {
+        None | Some(Token::LParen) | Some(Token::Comma) => true,
+
+        // factorial is postfix so "x! - y" should be binary not unary
+        Some(Token::Operator(op)) => *op != Operator::Fac,
+
+        _ => false,
+    }
 }

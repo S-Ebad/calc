@@ -5,40 +5,32 @@ mod operator;
 mod parser;
 mod token;
 
-use std::{
-    io::{self, Write},
-    process,
-};
-
 use crate::calc::Calculator;
+use rustyline::{DefaultEditor, error::ReadlineError};
 
 fn main() {
-    let mut buf = String::new();
-
     let mut calculator = Calculator::new();
+    let mut rl = DefaultEditor::new().expect("Default Editor initialization failed");
 
     loop {
-        buf.clear();
-        print!("\n> ");
-        let _ = io::stdout().flush();
+        let input;
+        match rl.readline("> ") {
+            Ok(ok) => input = ok,
 
-        if let Err(err) = io::stdin().read_line(&mut buf) {
-            eprintln!("Error: {}", err);
-
-            process::exit(1);
+            Err(ReadlineError::Interrupted | ReadlineError::Eof) => break,
+            Err(err) => {
+                eprintln!("Error: {}", err);
+                break;
+            }
         }
 
-        if buf.ends_with('\n') {
-            buf.pop();
-        }
+        let _ = rl.add_history_entry(&input);
 
-        if buf.is_empty() {
-            break;
-        }
-
-        match calculator.solve(&buf) {
+        match calculator.solve(&input) {
             Ok(ans) => println!("= {}", ans),
             Err(err) => eprintln!("Error: {}", err),
         }
+
+        println!();
     }
 }

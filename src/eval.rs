@@ -53,14 +53,12 @@ impl Calculator {
                         .ok_or("Invalid Argument: argument count not supplied")?
                         as usize;
 
-                    if arg_count > sum_stk.len() {
-                        return Err("Invalid Arguments: not enough arguments supplied".to_string());
-                    }
-
                     let mut args: Vec<f64> = Vec::with_capacity(arg_count);
 
-                    for _ in 0..arg_count {
-                        args.insert(0, sum_stk.pop().unwrap());
+                    if arg_count <= sum_stk.len() {
+                        for _ in 0..arg_count {
+                            args.insert(0, sum_stk.pop().unwrap());
+                        }
                     }
 
                     sum_stk.push(func.call(&args)?);

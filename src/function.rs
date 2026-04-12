@@ -19,6 +19,19 @@ pub enum Function {
     Rad,
     Deg,
     Pow,
+
+    Trunc, // truncate decimals
+    Int,
+    Asin,
+    Acos,
+    Atan,
+    Sinh,
+    Cosh,
+    Tanh,
+    Clamp,
+    Gcd, // greatest common denominator
+    Lcm, // least common multiple
+
     Max,
     Min,
 }
@@ -45,6 +58,18 @@ impl Function {
             "pow" => Ok(F::Pow),
             "deg" => Ok(F::Deg),
             "rad" => Ok(F::Rad),
+            "int" => Ok(F::Int),
+            "trunc" => Ok(F::Trunc),
+            "asin" => Ok(F::Asin),
+            "acos" => Ok(F::Acos),
+            "atan" => Ok(F::Atan),
+            "sinh" => Ok(F::Sinh),
+            "cosh" => Ok(F::Cosh),
+            "tanh" => Ok(F::Tanh),
+            "clamp" => Ok(F::Clamp),
+            "lcm" => Ok(F::Lcm),
+            "gcd" => Ok(F::Gcd),
+
             _ => Err(format!("Invalid Function: {}", name)),
         }
     }
@@ -56,7 +81,8 @@ impl Function {
         match self {
             F::Max | F::Min => (2, usize::MAX),
             F::Sqrt | F::Log => (1, 2),
-            F::Pow => (2, 2),
+            F::Pow | F::Gcd | F::Lcm => (2, 2),
+            F::Clamp => (3, 3),
 
             _ => (1, 1),
         }
@@ -85,8 +111,19 @@ impl Function {
         }
 
         let result = match self {
+            F::Int | F::Trunc => args[0].trunc(),
+            F::Asin => args[0].asin(),
+            F::Acos => args[0].acos(),
+            F::Atan => args[0].atan(),
+            F::Sinh => args[0].sinh(),
+            F::Cosh => args[0].cosh(),
+            F::Tanh => args[0].tanh(),
             F::Sin => args[0].sin(),
             F::Cos => args[0].cos(),
+            F::Clamp => args[0].clamp(args[1], args[2]),
+            F::Lcm => lcm(args[0], args[1]),
+            F::Gcd => gcd(args[0], args[1]),
+
             F::Tan => {
                 let normalized = (args[0] / f64::consts::FRAC_PI_2).round();
                 if (args[0] - normalized * f64::consts::FRAC_PI_2).abs() < f64::EPSILON
@@ -148,8 +185,18 @@ impl Function {
                 .copied()
                 .reduce(f64::min)
                 .ok_or("Function Error: min function has thrown an error")?,
-            F::Pow => args[0].powf(args[1]),
+            F::Pow => {
+                if args[0] == 0f64 && args[1] < 0f64 {
+                    return Err(format!(
+                        "Invalid Expression: division by zero ({0}^{1} = 1/({0}^{2}) = 1 / {0})",
+                        args[0],
+                        args[1],
+                        args[1].abs()
+                    ));
+                }
 
+                args[0].powf(args[1])
+            }
             F::Rad => args[0].to_radians(),
             F::Deg => args[0].to_degrees(),
         };
@@ -192,8 +239,43 @@ impl fmt::Display for Function {
             F::Pow => "pow",
             F::Rad => "rad",
             F::Deg => "deg",
+            F::Int => "int",
+            F::Trunc => "trunc",
+            F::Asin => "asin",
+            F::Acos => "acos",
+            F::Atan => "atan",
+            F::Sinh => "sinh",
+            F::Cosh => "cosh",
+            F::Tanh => "tanh",
+            F::Clamp => "clamp",
+            F::Gcd => "GCD",
+            F::Lcm => "LCM",
         };
 
         write!(f, "{}", name)
     }
+}
+
+fn gcd(mut a: f64, mut b: f64) -> f64 {
+    if a == b {
+        return a;
+    }
+
+    if b > a {
+        let temp = a;
+        a = b;
+        b = temp;
+    }
+
+    while b > 0f64 {
+        let temp = a;
+        a = b;
+        b = temp % b;
+    }
+
+    return a;
+}
+
+fn lcm(a: f64, b: f64) -> f64 {
+    a * (b / gcd(a, b))
 }

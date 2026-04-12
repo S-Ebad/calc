@@ -162,7 +162,6 @@ impl Calculator {
                         // Only wraps a single token. sin(30+1) requires explicit parens
                         if matches!(next, Some(Token::Number(_) | Token::Identifier(_))) {
                             result.push(Token::LParen);
-
                             let arg = iter.next().unwrap();
 
                             match arg {
@@ -181,6 +180,24 @@ impl Calculator {
                                 _ => result.push(arg),
                             };
 
+                            result.push(Token::RParen);
+                            // special case
+                        } else if matches!(
+                            next,
+                            Some(Token::Operator(Operator::Sub | Operator::Add))
+                        ) {
+                            result.push(Token::LParen);
+                            let sign = iter.next().unwrap();
+                            let num = iter.next().unwrap(); // is_unary guarantees there's a numbr after the sign
+
+                            let unary_sign = match sign {
+                                Token::Operator(Operator::Sub) => Token::Operator(Operator::Neg),
+                                Token::Operator(Operator::Add) => Token::Operator(Operator::Pos),
+                                _ => unreachable!(),
+                            };
+
+                            result.push(unary_sign);
+                            result.push(num);
                             result.push(Token::RParen);
                         }
                     } else if let Ok(c) = Constant::from(&name) {
@@ -227,6 +244,7 @@ impl Calculator {
         }
 
         let tokens = self.preprocessor(tokens)?;
+        println!("{:?}", tokens);
 
         let mut op_stk: Vec<Token> = Vec::new();
         let mut out_que: VecDeque<Token> = VecDeque::new();
@@ -248,6 +266,7 @@ impl Calculator {
             out_que.push_back(last);
         }
 
+        println!("{:?}", out_que);
         Ok(out_que)
     }
 }
