@@ -374,6 +374,43 @@ mod function_tests {
         assert_eq!(solve("sqrt(32, 5)"), 2.0);
     }
 
+    #[test]
+    fn atan2() {
+        assert_eq!(
+            round(solve("atan2(1, 1)")),
+            round(std::f64::consts::FRAC_PI_4)
+        );
+        assert_eq!(
+            round(solve("atan2(1, -1)")),
+            round(3.0 * std::f64::consts::FRAC_PI_4)
+        );
+        assert_eq!(
+            round(solve("atan2(-1, -1)")),
+            round(-3.0 * std::f64::consts::FRAC_PI_4)
+        );
+        assert_eq!(
+            round(solve("atan2(-1, 1)")),
+            round(-std::f64::consts::FRAC_PI_4)
+        );
+
+        assert_eq!(solve("atan2(0, 1)"), 0.0);
+        assert_eq!(
+            round(solve("atan2(1, 0)")),
+            round(std::f64::consts::FRAC_PI_2)
+        );
+        assert_eq!(round(solve("atan2(0, -1)")), round(std::f64::consts::PI));
+        assert_eq!(
+            round(solve("atan2(-1, 0)")),
+            round(-std::f64::consts::FRAC_PI_2)
+        );
+
+        assert_eq!(round(solve("atan2(1, 1)")), round(solve("atan(1 / 1)")));
+        assert_eq!(round(solve("atan2(3, 4)")), round(solve("atan(3 / 4)")));
+
+        assert!(solve_err("atan2(1)").contains("argument"));
+        assert!(solve_err("atan2(1, 2, 3)").contains("argument"));
+    }
+
     // basic math
     #[test]
     fn abs() {

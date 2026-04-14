@@ -25,6 +25,7 @@ pub enum Function {
     Asin,
     Acos,
     Atan,
+    Atan2,
     Sinh,
     Cosh,
     Tanh,
@@ -69,6 +70,7 @@ impl Function {
             "clamp" => Ok(F::Clamp),
             "lcm" => Ok(F::Lcm),
             "gcd" => Ok(F::Gcd),
+            "atan2" => Ok(F::Atan2),
 
             _ => Err(format!("Invalid Function: {}", name)),
         }
@@ -81,7 +83,7 @@ impl Function {
         match self {
             F::Max | F::Min => (2, usize::MAX),
             F::Sqrt | F::Log => (1, 2),
-            F::Pow | F::Gcd | F::Lcm => (2, 2),
+            F::Pow | F::Gcd | F::Atan2 | F::Lcm => (2, 2),
             F::Clamp => (3, 3),
 
             _ => (1, 1),
@@ -115,6 +117,7 @@ impl Function {
             F::Asin => args[0].asin(),
             F::Acos => args[0].acos(),
             F::Atan => args[0].atan(),
+            F::Atan2 => args[0].atan2(args[1]),
             F::Sinh => args[0].sinh(),
             F::Cosh => args[0].cosh(),
             F::Tanh => args[0].tanh(),
@@ -250,6 +253,7 @@ impl fmt::Display for Function {
             F::Clamp => "clamp",
             F::Gcd => "GCD",
             F::Lcm => "LCM",
+            F::Atan2 => "atan2",
         };
 
         write!(f, "{}", name)

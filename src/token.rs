@@ -70,7 +70,12 @@ impl Token {
         }
 
         if c.is_alphabetic() {
-            let word: String = take_while(iter, |c| c.is_alphabetic());
+            let mut word: String = take_while(iter, |c| c.is_alphabetic());
+
+            // atan2
+            if word == "atan" && iter.peek() == Some(&'2') {
+                word.push(iter.next().unwrap());
+            }
 
             return Ok(Token::Identifier(word));
         }
