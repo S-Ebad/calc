@@ -7,6 +7,18 @@ mod token;
 
 use crate::calc::Calculator;
 use rustyline::{DefaultEditor, error::ReadlineError};
+use std::time::Instant;
+
+fn time<F>(func: F, expr: &str) -> Result<String, String>
+where
+    F: FnOnce(&str) -> Result<f64, String>,
+{
+    let start = Instant::now();
+    let res = func(expr)?;
+    let dur = start.elapsed();
+
+    Ok(format!("{} ({:0?})", res, dur))
+}
 
 fn main() {
     let mut calculator = Calculator::new();
@@ -26,7 +38,7 @@ fn main() {
 
         let _ = rl.add_history_entry(&input);
 
-        match calculator.solve(&input) {
+        match time(|s| calculator.solve(s), &input) {
             Ok(ans) => println!("= {}", ans),
             Err(err) => eprintln!("Error: {}", err),
         }
