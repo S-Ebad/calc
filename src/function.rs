@@ -266,9 +266,10 @@ fn gcd(mut a: f64, mut b: f64) -> f64 {
     }
 
     if b > a {
-        let temp = a;
-        a = b;
-        b = temp;
+        std::mem::swap(&mut a, &mut b);
+        // let temp = a;
+        // a = b;
+        // b = temp;
     }
 
     while b > 0f64 {
@@ -277,7 +278,7 @@ fn gcd(mut a: f64, mut b: f64) -> f64 {
         b = temp % b;
     }
 
-    return a;
+    a
 }
 
 fn lcm(a: f64, b: f64) -> f64 {

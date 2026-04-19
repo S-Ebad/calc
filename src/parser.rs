@@ -188,10 +188,9 @@ impl Calculator {
                         ) {
                             result.push(Token::LParen);
                             let sign = iter.next().unwrap();
-                            let num = iter.next().ok_or_else(|| format!(
-                                "Invalid Argument: expected argument after function {}",
-                                f
-                            ))?;
+                            let num = iter.next().ok_or_else(|| {
+                                format!("Invalid Argument: expected argument after function {}", f)
+                            })?;
 
                             let unary_sign = match sign {
                                 Token::Operator(Operator::Sub) => Token::Operator(Operator::Neg),
@@ -217,9 +216,7 @@ impl Calculator {
                                 ));
                             }
                             // matches "pi sin"
-                            Some(Token::Identifier(name))
-                                if matches!(Function::from(name), Ok(_)) =>
-                            {
+                            Some(Token::Identifier(name)) if Function::from(name).is_ok() => {
                                 result.push(Token::Operator(Operator::Mul));
                             }
                             _ => (),

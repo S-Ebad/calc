@@ -6,7 +6,7 @@ use crate::{calc::Calculator, function::Function, operator::Operator};
 pub enum Constant {
     PI,
     E,   // Euler's number
-    INF, // infinity
+    Inf, // infinity
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -27,7 +27,7 @@ impl std::fmt::Display for Constant {
         let name = match self {
             Constant::PI => "PI",
             Constant::E => "e",
-            Constant::INF => "Inf",
+            Constant::Inf => "Inf",
         };
 
         write!(f, "{}", name)
@@ -39,7 +39,7 @@ impl Constant {
         match name.to_lowercase().as_str() {
             "pi" => Ok(Constant::PI),
             "e" => Ok(Constant::E),
-            "inf" => Ok(Constant::INF),
+            "inf" => Ok(Constant::Inf),
             _ => Err(format!("Invalid Constant: {}", name)),
         }
     }
@@ -48,7 +48,7 @@ impl Constant {
         match self {
             Constant::PI => f64::consts::PI,
             Constant::E => f64::consts::E,
-            Constant::INF => f64::INFINITY,
+            Constant::Inf => f64::INFINITY,
         }
     }
 }
@@ -65,7 +65,7 @@ impl Token {
             return Ok(Token::Operator(op));
         }
 
-        if c.is_digit(10) {
+        if c.is_ascii_digit() {
             return Ok(Token::Number(to_f64(iter)?));
         }
 

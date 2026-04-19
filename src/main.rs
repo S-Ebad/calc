@@ -25,16 +25,15 @@ fn main() {
     let mut rl = DefaultEditor::new().expect("Default Editor initialization failed");
 
     loop {
-        let input;
-        match rl.readline("> ") {
-            Ok(ok) => input = ok,
+        let input = match rl.readline("> ") {
+            Ok(ok) => ok,
 
             Err(ReadlineError::Interrupted | ReadlineError::Eof) => break,
             Err(err) => {
                 eprintln!("Error: {}", err);
                 break;
             }
-        }
+        };
 
         let _ = rl.add_history_entry(&input);
 

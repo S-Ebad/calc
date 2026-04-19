@@ -49,3 +49,9 @@ impl Calculator {
         Ok(ans)
     }
 }
+
+impl Default for Calculator {
+    fn default() -> Self {
+        Self::new()
+    }
+}
