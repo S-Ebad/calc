@@ -1,0 +1,226 @@
+use std::fmt;
+
+use crate::operator::Operator;
+use crate::token::{Lexer, Token};
+
+#[derive(Debug, PartialEq)]
+pub enum Expression {
+    Number(f64),
+    Identifier(String),
+
+    Binary {
+        op: Operator,
+        lhs: Box<Expression>,
+        rhs: Box<Expression>,
+    },
+
+    Unary {
+        op: Operator,
+        expr: Box<Expression>,
+    },
+
+    Postfix {
+        expr: Box<Expression>,
+        op: Operator,
+    },
+
+    // before its resolved
+    Apply {
+        identifier: String, // identifier,
+        args: Vec<Expression>,
+    },
+}
+
+impl Expression {
+    pub fn eval(&self) -> Result<f64, String> {
+        match self {
+            Expression::Identifier(s) => Err(format!("Unable to evaluate {:?}", s)),
+            Expression::Number(num) => Ok(*num),
+            Expression::Binary { op, lhs, rhs } => op.perform_op(lhs.eval()?, Some(rhs.eval()?)),
+
+            Expression::Unary { op, expr } => op.perform_op(expr.eval()?, None),
+            Expression::Postfix { expr, op } => op.perform_op(expr.eval()?, None),
+
+            Expression::Apply {
+                identifier: _,
+                args: _,
+            } => unreachable!(),
+        }
+    }
+
+    pub fn parse(lexer: &mut Lexer) -> Result<Self, String> {
+        let expr = parse_expression(lexer, 0)?;
+
+        if let Some(token) = lexer.peek() {
+            return Err(format!("Invalid Token: unexpected token {:?}", token));
+        }
+
+        Ok(expr)
+    }
+}
+
+fn nud(lexer: &mut Lexer) -> Result<Expression, String> {
+    Ok(match lexer.next() {
+        Some(Token::Number(num)) => Expression::Number(num),
+        Some(Token::Identifier(ident)) => {
+            // sin
+
+            let res = match lexer.peek() {
+                // call
+                Some(Token::LParen) => {
+                    lexer.next();
+                    let mut args: Vec<Expression> = Vec::new();
+
+                    if lexer.peek() != Some(&Token::RParen) {
+                        loop {
+                            args.push(parse_expression(lexer, 0)?);
+
+                            if lexer.peek() == Some(&Token::Comma) {
+                                lexer.next();
+                            } else {
+                                break;
+                            }
+                        }
+                    }
+
+                    if !matches!(lexer.peek(), Some(&Token::RParen)) {
+                        return Err("Unclosed Parenthesis".to_string());
+                    }
+                    lexer.next();
+
+                    Expression::Apply {
+                        identifier: ident,
+                        args,
+                    }
+                }
+
+                Some(
+                    Token::RParen
+                    | Token::Comma
+                    | Token::Operator(_)
+                    | Token::Identifier(_)
+                    | Token::Number(_),
+                )
+                | None => Expression::Identifier(ident),
+
+                token => return Err(format!("unexpected token after identifier: {:?}", token)),
+            };
+
+            res
+        }
+        Some(Token::LParen) => {
+            let lhs = parse_expression(lexer, 0)?;
+
+            // check closing parenthesis
+            if lexer.next() != Some(Token::RParen) {
+                return Err("expected closing parenthesis ')'".to_string());
+            }
+            // assert_eq!(lexer.next(), Some(Token::RParen));
+
+            lhs
+        }
+
+        Some(Token::Operator(op @ (Operator::Sub | Operator::Add))) => {
+            let unary = if op == Operator::Sub {
+                Operator::Neg
+            } else {
+                Operator::Pos
+            };
+
+            let expr = parse_expression(lexer, 100)?;
+            Expression::Unary {
+                op: unary,
+                expr: Box::new(expr),
+            }
+        }
+
+        t => return Err(format!("bad number: {:?}", t)),
+    })
+}
+
+// pratt parser
+fn parse_expression(lexer: &mut Lexer, min_bp: u8) -> Result<Expression, String> {
+    let mut lhs = nud(lexer)?;
+
+    // nud
+    loop {
+        // println!("{:?}", lexer.peek());
+        let (op, is_explicit) = match lexer.peek() {
+            Some(Token::Operator(op)) => (op.clone(), true),
+            Some(Token::LParen | Token::Identifier(_)) => (Operator::ImplicitMul, false),
+            Some(Token::Number(_)) => {
+                if matches!(lhs, Expression::Number(_)) {
+                    return Err(
+                        "Invalid Operator: implicit multiplication with two numbers is not allowed"
+                            .to_string(),
+                    );
+                }
+
+                (Operator::ImplicitMul, false)
+            }
+            Some(Token::RParen | Token::Comma) | None => break,
+            t => return Err(format!("bad operator: {:?}", t)),
+        };
+
+        let (l_bp, r_bp) = if is_explicit { op.bp() } else { (6, 6) };
+        if l_bp < min_bp {
+            break;
+        }
+
+        // consume if its an operator token
+        if is_explicit {
+            lexer.next();
+        }
+
+        // led
+        // postfix exception
+        if op.is_postfix() {
+            lhs = Expression::Postfix {
+                op,
+                expr: Box::new(lhs),
+            };
+
+            continue;
+        }
+
+        let rhs = parse_expression(lexer, r_bp)?;
+        lhs = Expression::Binary {
+            op,
+            lhs: Box::new(lhs),
+            rhs: Box::new(rhs),
+        };
+    }
+
+    Ok(lhs)
+}
+
+// print as: "sin(10)": "Apply(sin, [10])"
+impl fmt::Display for Expression {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Expression::Number(num) => write!(f, "{}", num),
+            Expression::Identifier(s) => write!(f, "{}", s),
+
+            // Op(...operands, args?=[])
+            Expression::Unary { op, expr } => {
+                write!(f, "{}({})", op, expr)
+            }
+            Expression::Binary { op, lhs, rhs } => {
+                write!(f, "{}({}, {})", op, lhs, rhs)
+            }
+            Expression::Postfix { expr, op } => {
+                write!(f, "{}({})", op, expr)
+            }
+
+            Expression::Apply { identifier, args } => {
+                let args_str = args
+                    .iter()
+                    .map(|a| format!("{}", a))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+
+                write!(f, "Apply({}, [{}])", identifier, args_str)
+            }
+        }
+    }
+}

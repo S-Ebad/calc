@@ -16,21 +16,30 @@ pub enum Token {
     Identifier(String), // a word is an identifier before being a function/constant/variable
     Function(Function),
     Constant(Constant),
-    Assign, // equal
     Comma,
     LParen,
     RParen,
 }
 
-impl std::fmt::Display for Constant {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let name = match self {
-            Constant::PI => "PI",
-            Constant::E => "e",
-            Constant::Inf => "Inf",
-        };
+pub struct Lexer {
+    tokens: Vec<Token>,
+}
 
-        write!(f, "{}", name)
+impl Lexer {
+    pub fn new(src: &str) -> Result<Self, String> {
+        let mut tokens = tokenize(src)?;
+        tokens.reverse();
+
+        Ok(Lexer { tokens })
+    }
+
+    // consume next
+    pub fn next(&mut self) -> Option<Token> {
+        self.tokens.pop()
+    }
+
+    pub fn peek(&mut self) -> Option<&Token> {
+        self.tokens.last()
     }
 }
 
@@ -59,7 +68,7 @@ impl Token {
         iter: &mut Peekable<Chars>,
         last_token: Option<&Token>,
     ) -> Result<Self, String> {
-        if let Ok(op) = Operator::from(c, last_token) {
+        if let Ok(op) = Operator::from(c) {
             iter.next();
 
             return Ok(Token::Operator(op));
@@ -84,7 +93,6 @@ impl Token {
             '(' => Ok(Token::LParen),
             ')' => Ok(Token::RParen),
             ',' => Ok(Token::Comma),
-            '=' => Ok(Token::Assign),
 
             _ => Err(format!("Invalid Token: '{}'", c)),
         };
@@ -152,23 +160,33 @@ fn to_f64(iter: &mut Peekable<Chars>) -> Result<f64, String> {
     }
 }
 
-impl Calculator {
-    pub fn tokenize(expr: &str) -> Result<Vec<Token>, String> {
-        let mut tokens = Vec::<Token>::new();
+fn tokenize(expr: &str) -> Result<Vec<Token>, String> {
+    let mut tokens = Vec::<Token>::new();
 
-        let mut iter = expr.chars().peekable();
+    let mut iter = expr.chars().peekable();
 
-        while let Some(&c) = iter.peek() {
-            // skip whitespace
-            if c.is_whitespace() {
-                iter.next();
+    while let Some(&c) = iter.peek() {
+        // skip whitespace
+        if c.is_whitespace() {
+            iter.next();
 
-                continue;
-            }
-
-            tokens.push(Token::from(c, &mut iter, tokens.last())?);
+            continue;
         }
 
-        Ok(tokens)
+        tokens.push(Token::from(c, &mut iter, tokens.last())?);
+    }
+
+    Ok(tokens)
+}
+
+impl std::fmt::Display for Constant {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let name = match self {
+            Constant::PI => "PI",
+            Constant::E => "e",
+            Constant::Inf => "Inf",
+        };
+
+        write!(f, "{}", name)
     }
 }

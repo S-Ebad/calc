@@ -7,10 +7,12 @@ pub enum Operator {
     Neg, // Unary-
     Pos, // Unary+
     Mul,
+    ImplicitMul,
     Div,
     Pow,
     Fac, // Factorial
     Mod, // modulos
+    Equal,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -21,15 +23,15 @@ pub enum Assoc {
 
 impl Operator {
     // get operator from char. last_token is needed for Unary
-    pub fn from(c: char, last_token: Option<&Token>) -> Result<Self, String> {
+    pub fn from(c: char) -> Result<Self, String> {
         // is unary?
-        if is_unary(c, last_token) {
-            return if c == '-' {
-                Ok(Operator::Neg)
-            } else {
-                Ok(Operator::Pos)
-            };
-        }
+        // if is_unary(c, last_token) {
+        //     return if c == '-' {
+        //         Ok(Operator::Neg)
+        //     } else {
+        //         Ok(Operator::Pos)
+        //     };
+        // }
 
         match c {
             '+' => Ok(Operator::Add),
@@ -43,13 +45,16 @@ impl Operator {
         }
     }
 
-    pub fn precedence(&self) -> u16 {
+    // binding power
+    pub fn bp(&self) -> (u8, u8) {
         match self {
-            Operator::Add | Operator::Sub => 1,
-            Operator::Mul | Operator::Div | Operator::Mod => 2,
-            Operator::Neg | Operator::Pos => 3,
-            Operator::Pow => 4,
-            Operator::Fac => 5,
+            Operator::Equal => (1, 0),
+            Operator::Add | Operator::Sub => (2, 3),
+            Operator::Mul | Operator::Div | Operator::Mod => (4, 5),
+            Operator::ImplicitMul => (6, 6),
+            Operator::Neg | Operator::Pos => (7, 8),
+            Operator::Pow => (9, 9),
+            Operator::Fac => (100, 0),
         }
     }
 
@@ -64,7 +69,35 @@ impl Operator {
         matches!(self.associativity(), Assoc::Left)
     }
 
-    pub fn perform_op(&self, num1: f64, num2: f64) -> Result<f64, String> {
+
+    // perform operator. It'll perform the operator depending on if num2 is supplied or not
+    pub fn perform_op(&self, num1: f64, num2: Option<f64>) -> Result<f64, String> {
+        match num2 {
+            Some(num2) => self.perform_infix(num1, num2),
+            None => self.perform_postfix_prefix(num1),
+        }
+    }
+
+    fn perform_postfix_prefix(&self, num1: f64) -> Result<f64, String> {
+        use Operator as OP;
+
+        match self {
+            OP::Pos => Ok(num1),
+            OP::Neg => Ok(-num1),
+            OP::Fac => factorial(num1),
+
+            _ => Err(format!(
+                "Invalid Operator: {:?} is not a postfix/prefix operator",
+                self
+            )),
+        }
+    }
+
+    pub fn is_postfix(&self) -> bool {
+        matches!(self, Self::Fac)
+    }
+
+    fn perform_infix(&self, num1: f64, num2: f64) -> Result<f64, String> {
         use Operator as OP;
 
         let result = match self {
@@ -121,31 +154,47 @@ impl std::fmt::Display for Operator {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         use Operator as OP;
         let name = match self {
-            OP::Add => "+",
-            OP::Sub => "-",
-            OP::Neg => "U-",
-            OP::Pos => "U+",
-            OP::Mul => "*",
-            OP::Div => "/",
-            OP::Pow => "^",
-            OP::Fac => "!",
-            OP::Mod => "%",
+            OP::Add => "Add",
+            OP::Sub => "Sub",
+            OP::Neg => "USub",
+            OP::Pos => "UAdd",
+            OP::Mul => "Mul",
+            OP::Div => "Div",
+            OP::Pow => "Pow",
+            OP::Fac => "Fac",
+            OP::Mod => "Mod",
+            OP::ImplicitMul => "IMul",
+            OP::Equal => "Eq",
         };
 
         write!(f, "{}", name)
     }
 }
 
-fn is_unary(c: char, last_token: Option<&Token>) -> bool {
-    if c != '-' && c != '+' {
-        return false;
+fn factorial(n: f64) -> Result<f64, String> {
+    if n < 0.0 || n.fract() != 0.0 {
+        return Err(format!("Invalid Argument: factorial undefined for {}", n));
     }
-    match last_token {
-        None | Some(Token::LParen) | Some(Token::Comma) => true,
 
-        // factorial is postfix so "x! - y" should be binary not unary
-        Some(Token::Operator(op)) => *op != Operator::Fac,
-
-        _ => false,
+    if n > 170.0 {
+        return Err(format!("Invalid Argument: {}! is too large", n));
     }
+
+    Ok((1..=n as u64).map(|x| x as f64).product())
 }
+
+// fn is_unary(c: char, last_token: Option<&Token>) -> bool {
+//     if c != '-' && c != '+' {
+//         return false;
+//     }
+//     match last_token {
+//         None | Some(Token::LParen) | Some(Token::Comma) => true,
+//
+//         // factorial is postfix so "x! - y" should be binary not unary
+//         Some(Token::Operator(op)) => *op != Operator::Fac,
+//
+//         _ => false,
+//     }
+// }
+
+

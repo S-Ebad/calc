@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 
-use crate::token::Token;
+use crate::token::Lexer;
+use crate::expression::Expression;
 
 pub struct Calculator {
     pub variables: HashMap<String, f64>,
@@ -18,8 +19,13 @@ impl Calculator {
     }
 
     pub fn solve(&mut self, buf: &str) -> Result<f64, String> {
-        let mut tokens = Self::tokenize(buf)?;
+        let mut lexer = Lexer::new(buf)?;
+        let expr = Expression::parse(&mut lexer);
 
+        dbg!(&expr);
+        todo!()
+
+        /*
         let assign_to = if let [Token::Identifier(_), Token::Assign, ..] = tokens.as_slice() {
             let Token::Identifier(name) = tokens.remove(0) else {
                 unreachable!()
@@ -47,6 +53,7 @@ impl Calculator {
         self.add_variable("ans", ans);
 
         Ok(ans)
+        */
     }
 }
 

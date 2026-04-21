@@ -2,18 +2,7 @@ use std::collections::VecDeque;
 
 use crate::{calc::Calculator, operator::Operator, token::Token};
 
-fn factorial(n: f64) -> Result<f64, String> {
-    if n < 0.0 || n.fract() != 0.0 {
-        return Err(format!("Invalid Argument: factorial undefined for {}", n));
-    }
-
-    if n > 170.0 {
-        return Err(format!("Invalid Argument: {}! is too large", n));
-    }
-
-    Ok((1..=n as u64).map(|x| x as f64).product())
-}
-
+/*
 impl Calculator {
     pub fn eval(&mut self, mut tokens: VecDeque<Token>) -> Result<f64, String> {
         let mut sum_stk: Vec<f64> = Vec::new();
@@ -27,12 +16,12 @@ impl Calculator {
                     }
                 },
 
-                Token::Operator(Operator::Fac) => match sum_stk.pop() {
-                    Some(num) => sum_stk.push(factorial(num)?),
-                    None => {
-                        return Err("Invalid Operand: factorial requires an operand".to_string());
-                    }
-                },
+                // Token::Operator(Operator::Fac) => match sum_stk.pop() {
+                //     Some(num) => sum_stk.push(factorial(num)?),
+                //     None => {
+                //         return Err("Invalid Operand: factorial requires an operand".to_string());
+                //     }
+                // },
 
                 Token::Operator(op) => {
                     let (num2, num1) = match (sum_stk.pop(), sum_stk.pop()) {
@@ -80,3 +69,4 @@ impl Calculator {
         Ok(sum_stk.pop().unwrap())
     }
 }
+*/

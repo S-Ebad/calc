@@ -1,11 +1,4 @@
-mod calc;
-mod eval;
-mod function;
-mod operator;
-mod parser;
-mod token;
-
-use crate::calc::Calculator;
+use calc::calc::Calculator;
 use rustyline::{DefaultEditor, error::ReadlineError};
 use std::time::Instant;
 

@@ -7,6 +7,7 @@ use crate::{
     token::{Constant, Token},
 };
 
+/*
 fn shunting_yard(
     token: Token,
     op_stk: &mut Vec<Token>,
@@ -268,3 +269,4 @@ impl Calculator {
         Ok(out_que)
     }
 }
+*/
