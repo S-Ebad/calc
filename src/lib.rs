@@ -1,7 +1,7 @@
 pub mod calc;
-pub mod eval;
+pub mod constant;
+pub mod expression;
 pub mod function;
 pub mod operator;
-pub mod parser;
-pub mod token;
-pub mod expression;
+pub mod resolver;
+pub mod lexer;

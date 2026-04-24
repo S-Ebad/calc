@@ -30,7 +30,7 @@ fn main() {
 
         let _ = rl.add_history_entry(&input);
 
-        match time(|s| calculator.solve(s), &input) {
+        match calculator.solve(&input) {
             Ok(ans) => println!("= {}", ans),
             Err(err) => eprintln!("Error: {}", err),
         }

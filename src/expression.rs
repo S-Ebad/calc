@@ -1,9 +1,10 @@
 use std::fmt;
 
+use crate::function::Function;
+use crate::lexer::{Lexer, Token};
 use crate::operator::Operator;
-use crate::token::{Lexer, Token};
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum Expression {
     Number(f64),
     Identifier(String),
@@ -26,12 +27,43 @@ pub enum Expression {
 
     // before its resolved
     Apply {
-        identifier: String, // identifier,
+        identifier: String,
+        args: Vec<Expression>,
+    },
+
+    // function call
+    Call {
+        func: Function,
         args: Vec<Expression>,
     },
 }
 
 impl Expression {
+    pub fn is_assign(&self) -> bool {
+        if let Expression::Binary {
+            op: Operator::Equal,
+            lhs,
+            rhs: _,
+        } = self
+        {
+            if let Expression::Identifier(ident) = lhs.as_ref() {
+                return true
+            }
+        }
+
+        false
+    }
+
+    pub fn is_func_def(&self) -> bool {
+        if let Expression::Binary { op: Operator::Equal, lhs, rhs: _ } = self {
+            if let Expression::Apply { identifier: _, args: _ } = lhs.as_ref() {
+                return true;
+            }
+        }
+
+        false
+    }
+
     pub fn eval(&self) -> Result<f64, String> {
         match self {
             Expression::Identifier(s) => Err(format!("Unable to evaluate {:?}", s)),
@@ -41,6 +73,15 @@ impl Expression {
             Expression::Unary { op, expr } => op.perform_op(expr.eval()?, None),
             Expression::Postfix { expr, op } => op.perform_op(expr.eval()?, None),
 
+            Expression::Call { func, args } => {
+                let res = args
+                    .into_iter()
+                    .map(|expr| expr.eval())
+                    .collect::<Result<Vec<f64>, _>>()?;
+
+                func.call(&res)
+            }
+
             Expression::Apply {
                 identifier: _,
                 args: _,
@@ -49,10 +90,18 @@ impl Expression {
     }
 
     pub fn parse(lexer: &mut Lexer) -> Result<Self, String> {
+        if lexer.is_empty() {
+            return Err("Invalid Expression: no expression to parse".to_string());
+        }
+
         let expr = parse_expression(lexer, 0)?;
 
         if let Some(token) = lexer.peek() {
-            return Err(format!("Invalid Token: unexpected token {:?}", token));
+            return Err(if matches!(token, Token::RParen) {
+                "Invalid Expression: unexpected closing parenthesis ')'".to_string()
+            } else {
+                format!("Invalid Expression: unexpected token {:?}", token)
+            });
         }
 
         Ok(expr)
@@ -103,7 +152,12 @@ fn nud(lexer: &mut Lexer) -> Result<Expression, String> {
                 )
                 | None => Expression::Identifier(ident),
 
-                token => return Err(format!("unexpected token after identifier: {:?}", token)),
+                token => {
+                    return Err(format!(
+                        "Invalid Token: unexpected token after identifier: {:?}",
+                        token
+                    ));
+                }
             };
 
             res
@@ -113,9 +167,8 @@ fn nud(lexer: &mut Lexer) -> Result<Expression, String> {
 
             // check closing parenthesis
             if lexer.next() != Some(Token::RParen) {
-                return Err("expected closing parenthesis ')'".to_string());
+                return Err("Invalid Expression: missing closing parentheses ')'".to_string());
             }
-            // assert_eq!(lexer.next(), Some(Token::RParen));
 
             lhs
         }
@@ -142,17 +195,14 @@ fn nud(lexer: &mut Lexer) -> Result<Expression, String> {
 fn parse_expression(lexer: &mut Lexer, min_bp: u8) -> Result<Expression, String> {
     let mut lhs = nud(lexer)?;
 
-    // nud
     loop {
-        // println!("{:?}", lexer.peek());
         let (op, is_explicit) = match lexer.peek() {
             Some(Token::Operator(op)) => (op.clone(), true),
             Some(Token::LParen | Token::Identifier(_)) => (Operator::ImplicitMul, false),
             Some(Token::Number(_)) => {
                 if matches!(lhs, Expression::Number(_)) {
                     return Err(
-                        "Invalid Operator: implicit multiplication with two numbers is not allowed"
-                            .to_string(),
+                        "Invalid Expression: missing operator between expressions".to_string()
                     );
                 }
 
@@ -183,7 +233,13 @@ fn parse_expression(lexer: &mut Lexer, min_bp: u8) -> Result<Expression, String>
             continue;
         }
 
-        let rhs = parse_expression(lexer, r_bp)?;
+        let rhs = parse_expression(lexer, r_bp).map_err(|_| {
+            format!(
+                "Invalid Expression: expected expression after operator {:?}",
+                op
+            )
+        })?;
+
         lhs = Expression::Binary {
             op,
             lhs: Box::new(lhs),
@@ -194,7 +250,7 @@ fn parse_expression(lexer: &mut Lexer, min_bp: u8) -> Result<Expression, String>
     Ok(lhs)
 }
 
-// print as: "sin(10)": "Apply(sin, [10])"
+// print "sin(10)" as: "Apply(sin, [10])"
 impl fmt::Display for Expression {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
@@ -220,6 +276,16 @@ impl fmt::Display for Expression {
                     .join(", ");
 
                 write!(f, "Apply({}, [{}])", identifier, args_str)
+            }
+
+            Expression::Call { func, args } => {
+                let args_str = args
+                    .iter()
+                    .map(|a| format!("{}", a))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+
+                write!(f, "Call({}, [{}])", func, args_str)
             }
         }
     }

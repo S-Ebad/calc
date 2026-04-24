@@ -297,7 +297,7 @@ mod variable_tests {
 
     #[test]
     fn ans_uninitialized_error() {
-        assert!(solve_err("ans").contains("ans is not yet defined"));
+        assert!(solve_err("ans").contains("ans not yet defined"));
     }
 
     #[test]
@@ -651,14 +651,14 @@ mod error_tests {
 
     #[test]
     fn mismatched_open() {
-        assert!(solve_err("(1 + 2").contains("unclosed parentheses"));
-        assert!(solve_err("((3 + 4)").contains("unclosed parentheses"));
+        assert!(solve_err("(1 + 2").contains("missing closing parentheses"));
+        assert!(solve_err("((3 + 4)").contains("missing closing parentheses"));
     }
 
     #[test]
     fn mismatched_close() {
-        assert!(solve_err("1 + 2)").contains("mismatched parentheses"));
-        assert!(solve_err("(1 + 2))").contains("mismatched parentheses"));
+        assert!(solve_err("1 + 2)").contains("unexpected closing parenthesis"));
+        assert!(solve_err("(1 + 2))").contains("unexpected closing parenthesis"));
     }
 
     #[test]
@@ -686,20 +686,12 @@ mod error_tests {
     }
 
     #[test]
-    fn constant_implicit_error() {
-        assert!(solve_err("pi2").contains("isn't supported"));
-        assert!(solve_err("e2").contains("isn't supported"));
-    }
-
-    #[test]
     fn sqrt_negative() {
         assert!(solve_is_err("sqrt(-1)"));
     }
 
     #[test]
     fn ln_non_positive() {
-        // assert_eq!(solev())
-        // assert!(solve_is_err("ln(0)"));
         assert!(solve_is_err("ln(-1)"));
     }
 

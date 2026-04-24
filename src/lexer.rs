@@ -1,13 +1,7 @@
-use std::{f64, iter::Peekable, str::Chars};
+use std::{iter::Peekable, str::Chars};
 
-use crate::{calc::Calculator, function::Function, operator::Operator};
-
-#[derive(Debug, Copy, Clone, PartialEq)]
-pub enum Constant {
-    PI,
-    E,   // Euler's number
-    Inf, // infinity
-}
+use crate::constant::Constant;
+use crate::{function::Function, operator::Operator};
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum Token {
@@ -41,24 +35,9 @@ impl Lexer {
     pub fn peek(&mut self) -> Option<&Token> {
         self.tokens.last()
     }
-}
 
-impl Constant {
-    pub fn from(name: &str) -> Result<Self, String> {
-        match name.to_lowercase().as_str() {
-            "pi" => Ok(Constant::PI),
-            "e" => Ok(Constant::E),
-            "inf" => Ok(Constant::Inf),
-            _ => Err(format!("Invalid Constant: {}", name)),
-        }
-    }
-
-    pub fn get_number(&self) -> f64 {
-        match self {
-            Constant::PI => f64::consts::PI,
-            Constant::E => f64::consts::E,
-            Constant::Inf => f64::INFINITY,
-        }
+    pub fn is_empty(&self) -> bool {
+        self.tokens.is_empty()
     }
 }
 
@@ -66,7 +45,6 @@ impl Token {
     pub fn from(
         c: char,
         iter: &mut Peekable<Chars>,
-        last_token: Option<&Token>,
     ) -> Result<Self, String> {
         if let Ok(op) = Operator::from(c) {
             iter.next();
@@ -154,7 +132,7 @@ fn to_f64(iter: &mut Peekable<Chars>) -> Result<f64, String> {
         .map_err(|_| format!("Invalid Number: '{}'", num));
 
     if mul_euler {
-        Ok(result? * f64::consts::E)
+        Ok(result? * std::f64::consts::E)
     } else {
         result
     }
@@ -173,7 +151,7 @@ fn tokenize(expr: &str) -> Result<Vec<Token>, String> {
             continue;
         }
 
-        tokens.push(Token::from(c, &mut iter, tokens.last())?);
+        tokens.push(Token::from(c, &mut iter)?);
     }
 
     Ok(tokens)

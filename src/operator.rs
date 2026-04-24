@@ -1,5 +1,3 @@
-use crate::token::Token;
-
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Operator {
     Add, // Binary+
@@ -24,15 +22,6 @@ pub enum Assoc {
 impl Operator {
     // get operator from char. last_token is needed for Unary
     pub fn from(c: char) -> Result<Self, String> {
-        // is unary?
-        // if is_unary(c, last_token) {
-        //     return if c == '-' {
-        //         Ok(Operator::Neg)
-        //     } else {
-        //         Ok(Operator::Pos)
-        //     };
-        // }
-
         match c {
             '+' => Ok(Operator::Add),
             '-' => Ok(Operator::Sub),
@@ -41,6 +30,7 @@ impl Operator {
             '^' => Ok(Operator::Pow),
             '!' => Ok(Operator::Fac),
             '%' => Ok(Operator::Mod),
+            '=' => Ok(Operator::Equal),
             _ => Err(format!("Invalid Operator: {}", c)),
         }
     }
@@ -182,19 +172,3 @@ fn factorial(n: f64) -> Result<f64, String> {
 
     Ok((1..=n as u64).map(|x| x as f64).product())
 }
-
-// fn is_unary(c: char, last_token: Option<&Token>) -> bool {
-//     if c != '-' && c != '+' {
-//         return false;
-//     }
-//     match last_token {
-//         None | Some(Token::LParen) | Some(Token::Comma) => true,
-//
-//         // factorial is postfix so "x! - y" should be binary not unary
-//         Some(Token::Operator(op)) => *op != Operator::Fac,
-//
-//         _ => false,
-//     }
-// }
-
-
