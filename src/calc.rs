@@ -1,4 +1,4 @@
-use crate::expression::Expression;
+use crate::expression::{Expression, IntoFunction};
 use crate::lexer::Lexer;
 use crate::resolver::resolver;
 
@@ -6,12 +6,14 @@ use std::collections::HashMap;
 
 pub struct Calculator {
     pub variables: HashMap<String, f64>,
+    pub funcs: HashMap<String, IntoFunction>,
 }
 
 impl Calculator {
     pub fn new() -> Self {
         Calculator {
             variables: HashMap::new(),
+            funcs: HashMap::new(),
         }
     }
 
@@ -19,14 +21,46 @@ impl Calculator {
         self.variables.insert(name.to_string(), value);
     }
 
+    pub fn set_user_function(&mut self, function: IntoFunction) {
+        self.funcs.insert(function.name.to_owned(), function);
+    }
+
     pub fn solve(&mut self, buf: &str) -> Result<f64, String> {
         let mut lexer = Lexer::new(buf)?;
         let mut expr = Expression::parse(&mut lexer)?;
 
-        resolver(&mut expr, &self.variables)?;
+        if expr.is_func_def() {
+            match expr.into_func() {
+                Some(func) => {
+                    println!("{:?}", &func);
+                    self.set_user_function(func);
 
-        let ans = (expr.eval()? * 1e10).round() / 1e10;
+                    return Ok(0.0);
+                }
+                _ => unreachable!(),
+            }
+        }
 
+        let ans;
+
+        if expr.is_assign() {
+            match expr.into_assign() {
+                Some((name, mut expr)) => {
+                    resolver(&mut expr, &self.variables, &self.funcs)?;
+                    ans = expr.eval()?;
+
+                    self.set_variable(&name, ans);
+                }
+
+                _ => unreachable!(),
+            }
+        } else {
+            resolver(&mut expr, &self.variables, &self.funcs)?;
+
+            ans = expr.eval()?;
+        }
+
+        let ans = (ans * 1e10).round() / 1e10;
         self.set_variable("ans", ans);
 
         Ok(ans)

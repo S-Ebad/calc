@@ -38,6 +38,23 @@ pub enum Expression {
     },
 }
 
+#[derive(Debug)]
+pub struct IntoFunction {
+    pub name: String,
+    pub params: Vec<Expression>,
+    pub body: Expression,
+}
+
+impl IntoFunction {
+    fn new(name: String, args: Vec<Expression>, body: Expression) -> Self {
+        Self {
+            name,
+            params: args,
+            body,
+        }
+    }
+}
+
 impl Expression {
     pub fn is_assign(&self) -> bool {
         if let Expression::Binary {
@@ -46,22 +63,63 @@ impl Expression {
             rhs: _,
         } = self
         {
-            if let Expression::Identifier(ident) = lhs.as_ref() {
-                return true
+            if let Expression::Identifier(_) = lhs.as_ref() {
+                return true;
             }
         }
 
         false
     }
 
+    pub fn into_assign(self) -> Option<(String, Expression)> {
+        match self {
+            Expression::Binary {
+                op: Operator::Equal,
+                lhs,
+                rhs,
+            } => match *lhs {
+                Expression::Identifier(ident) => Some((ident, *rhs)),
+                _ => None,
+            },
+
+            _ => None,
+        }
+    }
+
     pub fn is_func_def(&self) -> bool {
-        if let Expression::Binary { op: Operator::Equal, lhs, rhs: _ } = self {
-            if let Expression::Apply { identifier: _, args: _ } = lhs.as_ref() {
+        if let Expression::Binary {
+            op: Operator::Equal,
+            lhs,
+            rhs: _,
+        } = self
+        {
+            if let Expression::Apply {
+                identifier: _,
+                args: _,
+            } = lhs.as_ref()
+            {
                 return true;
             }
         }
 
         false
+    }
+
+    pub fn into_func(self) -> Option<IntoFunction> {
+        match self {
+            Expression::Binary {
+                op: Operator::Equal,
+                lhs,
+                rhs,
+            } => match *lhs {
+                Expression::Apply { identifier, args } => {
+                    Some(IntoFunction::new(identifier, args, *rhs))
+                }
+                _ => None,
+            },
+
+            _ => None,
+        }
     }
 
     pub fn eval(&self) -> Result<f64, String> {
@@ -112,7 +170,6 @@ fn nud(lexer: &mut Lexer) -> Result<Expression, String> {
     Ok(match lexer.next() {
         Some(Token::Number(num)) => Expression::Number(num),
         Some(Token::Identifier(ident)) => {
-            // sin
 
             let res = match lexer.peek() {
                 // call

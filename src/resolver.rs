@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use crate::constant::Constant;
-use crate::expression::Expression;
+use crate::expression::{Expression, IntoFunction};
 use crate::function::Function;
 use crate::operator::Operator;
 
@@ -25,7 +25,11 @@ fn resolve_ident(ident: &str, vars: &HashMap<String, f64>) -> Result<Expression,
     }
 }
 
-pub fn resolver(expr: &mut Expression, vars: &HashMap<String, f64>) -> Result<(), String> {
+pub fn resolver(
+    expr: &mut Expression,
+    vars: &HashMap<String, f64>,
+    funcs: &HashMap<String, IntoFunction>,
+) -> Result<(), String> {
     match expr {
         Expression::Binary {
             op: op @ (Operator::ImplicitMul | Operator::Sub),
@@ -44,7 +48,7 @@ pub fn resolver(expr: &mut Expression, vars: &HashMap<String, f64>) -> Result<()
 
             *expr = match (lhs.as_ref(), rhs.as_ref()) {
                 (Expression::Identifier(ident), _) => {
-                    resolver(&mut rhs_owned, vars)?;
+                    resolver(&mut rhs_owned, vars, funcs)?;
 
                     if let Ok(func) = Function::from(ident) {
                         let arg = if op == &Operator::Sub {
@@ -74,7 +78,7 @@ pub fn resolver(expr: &mut Expression, vars: &HashMap<String, f64>) -> Result<()
                         return Err(format!("Cannot call {} on rhs of implicit mul", ident));
                     }
 
-                    resolver(&mut lhs_owned, vars)?;
+                    resolver(&mut lhs_owned, vars, funcs)?;
 
                     Expression::Binary {
                         op: res_op,
@@ -84,8 +88,8 @@ pub fn resolver(expr: &mut Expression, vars: &HashMap<String, f64>) -> Result<()
                 }
 
                 _ => {
-                    resolver(&mut lhs_owned, vars)?;
-                    resolver(&mut rhs_owned, vars)?;
+                    resolver(&mut lhs_owned, vars, funcs)?;
+                    resolver(&mut rhs_owned, vars, funcs)?;
 
                     Expression::Binary {
                         op: res_op,
@@ -98,12 +102,12 @@ pub fn resolver(expr: &mut Expression, vars: &HashMap<String, f64>) -> Result<()
             Ok(())
         }
         Expression::Binary { op: _, lhs, rhs } => {
-            resolver(lhs, vars)?;
-            resolver(rhs, vars)
+            resolver(lhs, vars, funcs)?;
+            resolver(rhs, vars, funcs)
         }
 
         Expression::Unary { op: _, expr } | Expression::Postfix { expr, op: _ } => {
-            resolver(expr, vars)
+            resolver(expr, vars, funcs)
         }
 
         Expression::Apply {
@@ -113,7 +117,7 @@ pub fn resolver(expr: &mut Expression, vars: &HashMap<String, f64>) -> Result<()
             if let Ok(func) = Function::from(ident) {
                 let mut resolved_args = args.clone();
                 for arg in resolved_args.iter_mut() {
-                    resolver(arg, vars)?;
+                    resolver(arg, vars, funcs)?;
                 }
 
                 *expr = Expression::Call {
@@ -133,7 +137,7 @@ pub fn resolver(expr: &mut Expression, vars: &HashMap<String, f64>) -> Result<()
                 }
 
                 let mut rhs_expr = args[0].clone();
-                resolver(&mut rhs_expr, vars)?;
+                resolver(&mut rhs_expr, vars, funcs)?;
 
                 let num = Expression::Number(cons.get_number());
                 *expr = Expression::Binary {
@@ -154,7 +158,7 @@ pub fn resolver(expr: &mut Expression, vars: &HashMap<String, f64>) -> Result<()
                 }
 
                 let mut rhs_expr = args[0].clone();
-                resolver(&mut rhs_expr, vars)?;
+                resolver(&mut rhs_expr, vars, funcs)?;
 
                 let num = Expression::Number(*var);
                 *expr = Expression::Binary {
