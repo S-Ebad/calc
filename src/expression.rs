@@ -53,6 +53,19 @@ impl IntoFunction {
             body,
         }
     }
+
+    pub fn is_valid(&self) -> Result<(), String> {
+        for param in self.params.iter() {
+            if !matches!(param, Expression::Identifier(_)) {
+                return Err(format!(
+                    "Invalid Function Definition: parameter must be an identifier, got {}",
+                    param
+                ));
+            }
+        }
+
+        Ok(())
+    }
 }
 
 impl Expression {
@@ -170,7 +183,6 @@ fn nud(lexer: &mut Lexer) -> Result<Expression, String> {
     Ok(match lexer.next() {
         Some(Token::Number(num)) => Expression::Number(num),
         Some(Token::Identifier(ident)) => {
-
             let res = match lexer.peek() {
                 // call
                 Some(Token::LParen) => {

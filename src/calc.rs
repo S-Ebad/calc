@@ -32,7 +32,8 @@ impl Calculator {
         if expr.is_func_def() {
             match expr.into_func() {
                 Some(func) => {
-                    println!("{:?}", &func);
+
+                    func.is_valid()?;
                     self.set_user_function(func);
 
                     return Ok(0.0);
