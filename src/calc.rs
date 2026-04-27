@@ -1,12 +1,13 @@
-use crate::expression::{Expression, IntoFunction};
+use crate::expression::Expression;
 use crate::lexer::Lexer;
 use crate::resolver::resolver;
+use crate::user_function::UserFunction;
 
 use std::collections::HashMap;
 
 pub struct Calculator {
     pub variables: HashMap<String, f64>,
-    pub funcs: HashMap<String, IntoFunction>,
+    pub funcs: HashMap<String, UserFunction>,
 }
 
 impl Calculator {
@@ -21,45 +22,38 @@ impl Calculator {
         self.variables.insert(name.to_string(), value);
     }
 
-    pub fn set_user_function(&mut self, function: IntoFunction) {
+    pub fn set_user_function(&mut self, function: UserFunction) {
         self.funcs.insert(function.name.to_owned(), function);
     }
 
     pub fn solve(&mut self, buf: &str) -> Result<f64, String> {
         let mut lexer = Lexer::new(buf)?;
-        let mut expr = Expression::parse(&mut lexer)?;
+
+        let mut expr = Expression::parse(&mut lexer, &self.funcs)?;
 
         if expr.is_func_def() {
-            match expr.into_func() {
-                Some(func) => {
+            let func = expr.into_func().unwrap();
 
-                    func.is_valid()?;
-                    self.set_user_function(func);
+            func.is_valid()?;
+            self.set_user_function(func);
 
-                    return Ok(0.0);
-                }
-                _ => unreachable!(),
-            }
+            return Ok(0.0);
         }
 
-        let ans;
+        let ans = if expr.is_assign() {
+            let (name, mut expr) = expr.into_assign().unwrap();
 
-        if expr.is_assign() {
-            match expr.into_assign() {
-                Some((name, mut expr)) => {
-                    resolver(&mut expr, &self.variables, &self.funcs)?;
-                    ans = expr.eval()?;
+            resolver(&mut expr, &self.variables, &self.funcs, 0)?;
 
-                    self.set_variable(&name, ans);
-                }
+            let ans = expr.eval()?;
+            self.set_variable(&name, ans);
 
-                _ => unreachable!(),
-            }
+            ans
         } else {
-            resolver(&mut expr, &self.variables, &self.funcs)?;
+            resolver(&mut expr, &self.variables, &self.funcs, 0)?;
 
-            ans = expr.eval()?;
-        }
+            expr.eval()?
+        };
 
         let ans = (ans * 1e10).round() / 1e10;
         self.set_variable("ans", ans);

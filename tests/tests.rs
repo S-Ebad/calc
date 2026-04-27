@@ -124,6 +124,35 @@ mod arithmetic_tests {
         assert_eq!(solve("2 ^ 3 + 1"), 9.0);
         assert_eq!(solve("(2 + 3) ^ 2"), 25.0);
     }
+
+    #[test]
+    fn floating_point_precision_chain() {
+        // Repeated addition of 0.1 to check rounding stability
+        assert_eq!(
+            solve("0.1 + 0.1 + 0.1 + 0.1 + 0.1 + 0.1 + 0.1 + 0.1 + 0.1 + 0.1"),
+            1.0
+        );
+    }
+
+    #[test]
+    fn power_of_negatives() {
+        // Odd root of a negative number via sqrt(x, n)
+        assert_eq!(solve("sqrt(-8, 3)"), -2.0);
+        // Even root of negative should error
+        assert!(solve_is_err("sqrt(-4, 2)"));
+    }
+
+    #[test]
+    fn large_factorial_overflow() {
+        // The implementation caps factorial at 170
+        assert!(solve_err("171!").contains("too large"));
+    }
+
+    #[test]
+    fn modulo_with_decimals() {
+        // 10.5 % 3 = 1.5
+        assert_eq!(solve("10.5 % 3"), 1.5);
+    }
 }
 
 mod unary_tests {
@@ -220,6 +249,13 @@ mod constants_tests {
     }
 
     #[test]
+    fn scientific_notation_vs_euler() {
+        assert_eq!(solve("9e"), round(9.0 * std::f64::consts::E));
+        assert_eq!(solve("9e2"), 900.0);
+        assert!(solve_err("9e9e9").contains("Invalid Number"));
+    }
+
+    #[test]
     fn implicit_function_call() {
         assert_eq!(solve("sin pi"), 0.0);
         assert_eq!(solve("cos pi"), -1.0);
@@ -234,10 +270,10 @@ mod constants_tests {
 
     #[test]
     fn constants_in_expressions() {
-        assert_eq!(round(solve("pi * 2")), round(2.0 * std::f64::consts::PI));
-        assert_eq!(round(solve("e ^ 2")), round(std::f64::consts::E.powi(2)));
-        assert_eq!(round(solve("pi / pi")), 1.0);
-        assert_eq!(round(solve("e / e")), 1.0);
+        assert_eq!(solve("pi * 2"), round(2.0 * std::f64::consts::PI));
+        assert_eq!(solve("e ^ 2"), round(std::f64::consts::E.powi(2)));
+        assert_eq!(solve("pi / pi"), 1.0);
+        assert_eq!(solve("e / e"), 1.0);
     }
 
     #[test]
@@ -344,19 +380,19 @@ mod function_tests {
         assert_eq!(solve("sin(0)"), 0.0);
         assert_eq!(solve("sin(pi)"), 0.0);
         assert_eq!(solve("sin(pi / 2)"), 1.0);
-        assert_eq!(round(solve("sin(pi / 6)")), round(0.5));
+        assert_eq!(solve("sin(pi / 6)"), round(0.5));
     }
     #[test]
     fn cos() {
         assert_eq!(solve("cos(0)"), 1.0);
         assert_eq!(solve("cos(pi)"), -1.0);
-        assert_eq!(round(solve("cos(pi / 2)")), 0.0);
-        assert_eq!(round(solve("cos(pi / 3)")), round(0.5));
+        assert_eq!(solve("cos(pi / 2)"), 0.0);
+        assert_eq!(solve("cos(pi / 3)"), round(0.5));
     }
     #[test]
     fn tan() {
         assert_eq!(solve("tan(0)"), 0.0);
-        assert_eq!(round(solve("tan(pi / 4)")), 1.0);
+        assert_eq!(solve("tan(pi / 4)"), 1.0);
     }
 
     // sqrt variants
@@ -376,36 +412,24 @@ mod function_tests {
 
     #[test]
     fn atan2() {
+        assert_eq!(solve("atan2(1, 1)"), round(std::f64::consts::FRAC_PI_4));
         assert_eq!(
-            round(solve("atan2(1, 1)")),
-            round(std::f64::consts::FRAC_PI_4)
-        );
-        assert_eq!(
-            round(solve("atan2(1, -1)")),
+            solve("atan2(1, -1)"),
             round(3.0 * std::f64::consts::FRAC_PI_4)
         );
         assert_eq!(
-            round(solve("atan2(-1, -1)")),
+            solve("atan2(-1, -1)"),
             round(-3.0 * std::f64::consts::FRAC_PI_4)
         );
-        assert_eq!(
-            round(solve("atan2(-1, 1)")),
-            round(-std::f64::consts::FRAC_PI_4)
-        );
+        assert_eq!(solve("atan2(-1, 1)"), round(-std::f64::consts::FRAC_PI_4));
 
         assert_eq!(solve("atan2(0, 1)"), 0.0);
-        assert_eq!(
-            round(solve("atan2(1, 0)")),
-            round(std::f64::consts::FRAC_PI_2)
-        );
-        assert_eq!(round(solve("atan2(0, -1)")), round(std::f64::consts::PI));
-        assert_eq!(
-            round(solve("atan2(-1, 0)")),
-            round(-std::f64::consts::FRAC_PI_2)
-        );
+        assert_eq!(solve("atan2(1, 0)"), round(std::f64::consts::FRAC_PI_2));
+        assert_eq!(solve("atan2(0, -1)"), round(std::f64::consts::PI));
+        assert_eq!(solve("atan2(-1, 0)"), round(-std::f64::consts::FRAC_PI_2));
 
-        assert_eq!(round(solve("atan2(1, 1)")), round(solve("atan(1 / 1)")));
-        assert_eq!(round(solve("atan2(3, 4)")), round(solve("atan(3 / 4)")));
+        assert_eq!(solve("atan2(1, 1)"), round(solve("atan(1 / 1)")));
+        assert_eq!(solve("atan2(3, 4)"), round(solve("atan(3 / 4)")));
 
         assert!(solve_err("atan2(1)").contains("argument"));
         assert!(solve_err("atan2(1, 2, 3)").contains("argument"));
@@ -462,7 +486,7 @@ mod function_tests {
     fn ln() {
         assert_eq!(solve("ln(e)"), 1.0);
         assert_eq!(solve("ln(1)"), 0.0);
-        assert_eq!(round(solve("ln(e ^ 2)")), 2.0);
+        assert_eq!(solve("ln(e ^ 2)"), 2.0);
     }
     #[test]
     fn log10() {
@@ -481,7 +505,7 @@ mod function_tests {
     fn exp() {
         assert_eq!(solve("exp(1)"), round(std::f64::consts::E));
         assert_eq!(solve("exp(0)"), 1.0);
-        assert_eq!(round(solve("exp(2)")), round(std::f64::consts::E.powi(2)));
+        assert_eq!(solve("exp(2)"), round(std::f64::consts::E.powi(2)));
     }
 
     // power / roots
@@ -530,14 +554,14 @@ mod function_tests {
         assert_eq!(solve("deg(pi)"), 180.0);
         assert_eq!(solve("deg(0)"), 0.0);
         assert_eq!(solve("deg(2pi)"), 360.0);
-        assert_eq!(round(solve("deg(pi / 2)")), 90.0);
+        assert_eq!(solve("deg(pi / 2)"), 90.0);
     }
     #[test]
     fn rad() {
         assert_eq!(solve("rad(180)"), round(std::f64::consts::PI));
         assert_eq!(solve("rad(0)"), 0.0);
-        assert_eq!(round(solve("rad(360)")), round(2.0 * std::f64::consts::PI));
-        assert_eq!(round(solve("rad(90)")), round(std::f64::consts::FRAC_PI_2));
+        assert_eq!(solve("rad(360)"), round(2.0 * std::f64::consts::PI));
+        assert_eq!(solve("rad(90)"), round(std::f64::consts::FRAC_PI_2));
     }
 
     // trig inverse
@@ -545,25 +569,19 @@ mod function_tests {
     fn asin() {
         assert_eq!(solve("asin(1)"), round(std::f64::consts::FRAC_PI_2));
         assert_eq!(solve("asin(0)"), 0.0);
-        assert_eq!(
-            round(solve("asin(-1)")),
-            round(-std::f64::consts::FRAC_PI_2)
-        );
+        assert_eq!(solve("asin(-1)"), round(-std::f64::consts::FRAC_PI_2));
     }
     #[test]
     fn acos() {
         assert_eq!(solve("acos(1)"), 0.0);
         assert_eq!(solve("acos(0)"), round(std::f64::consts::FRAC_PI_2));
-        assert_eq!(round(solve("acos(-1)")), round(std::f64::consts::PI));
+        assert_eq!(solve("acos(-1)"), round(std::f64::consts::PI));
     }
     #[test]
     fn atan() {
         assert_eq!(solve("atan(1)"), round(std::f64::consts::FRAC_PI_4));
         assert_eq!(solve("atan(0)"), 0.0);
-        assert_eq!(
-            round(solve("atan(-1)")),
-            round(-std::f64::consts::FRAC_PI_4)
-        );
+        assert_eq!(solve("atan(-1)"), round(-std::f64::consts::FRAC_PI_4));
     }
 
     // hyperbolic
@@ -571,50 +589,50 @@ mod function_tests {
     fn sinh() {
         assert_eq!(solve("sinh(0)"), 0.0);
         assert_eq!(solve("sinh(1)"), round(1_f64.sinh()));
-        assert_eq!(round(solve("sinh(-1)")), round(-1_f64.sinh()));
+        assert_eq!(solve("sinh(-1)"), round(-1_f64.sinh()));
     }
     #[test]
     fn cosh() {
         assert_eq!(solve("cosh(0)"), 1.0);
         assert_eq!(solve("cosh(1)"), round(1_f64.cosh()));
-        assert_eq!(round(solve("cosh(-1)")), round(1_f64.cosh())); // cosh is even
+        assert_eq!(solve("cosh(-1)"), round(1_f64.cosh())); // cosh is even
     }
     #[test]
     fn tanh() {
         assert_eq!(solve("tanh(0)"), 0.0);
         assert_eq!(solve("tanh(1)"), round(1_f64.tanh()));
-        assert_eq!(round(solve("tanh(-1)")), round(-1_f64.tanh()));
+        assert_eq!(solve("tanh(-1)"), round(-1_f64.tanh()));
     }
 
     // trig identities
     #[test]
     fn pythagorean_identity() {
         // sin²(x) + cos²(x) = 1
-        assert_eq!(round(solve("sin(pi/3)^2 + cos(pi/3)^2")), 1.0);
-        assert_eq!(round(solve("sin(pi/7)^2 + cos(pi/7)^2")), 1.0);
-        assert_eq!(round(solve("sin(1)^2 + cos(1)^2")), 1.0);
+        assert_eq!(solve("sin(pi/3)^2 + cos(pi/3)^2"), 1.0);
+        assert_eq!(solve("sin(pi/7)^2 + cos(pi/7)^2"), 1.0);
+        assert_eq!(solve("sin(1)^2 + cos(1)^2"), 1.0);
     }
 
     #[test]
     fn trig_inverse_roundtrip() {
         // asin(sin(x)) = x for x in [-pi/2, pi/2]
-        assert_eq!(round(solve("asin(sin(0.5))")), 0.5);
-        assert_eq!(round(solve("acos(cos(0.5))")), 0.5);
-        assert_eq!(round(solve("atan(tan(0.5))")), 0.5);
+        assert_eq!(solve("asin(sin(0.5))"), 0.5);
+        assert_eq!(solve("acos(cos(0.5))"), 0.5);
+        assert_eq!(solve("atan(tan(0.5))"), 0.5);
     }
 
     #[test]
     fn log_exp_inverse() {
-        assert_eq!(round(solve("ln(exp(3))")), 3.0);
-        assert_eq!(round(solve("exp(ln(5))")), 5.0);
-        assert_eq!(round(solve("log(10 ^ 4)")), 4.0);
+        assert_eq!(solve("ln(exp(3))"), 3.0);
+        assert_eq!(solve("exp(ln(5))"), 5.0);
+        assert_eq!(solve("log(10 ^ 4)"), 4.0);
     }
 
     #[test]
     fn sqrt_pow_inverse() {
         assert_eq!(solve("sqrt(4) ^ 2"), 4.0);
         assert_eq!(solve("sqrt(9) ^ 2"), 9.0);
-        assert_eq!(round(solve("cbrt(8) ^ 3")), 8.0);
+        assert_eq!(solve("cbrt(8) ^ 3"), 8.0);
     }
 
     #[test]
@@ -622,7 +640,7 @@ mod function_tests {
         assert_eq!(solve("abs(floor(-3.5))"), 4.0);
         assert_eq!(solve("max(abs(-5), abs(-3))"), 5.0);
         assert_eq!(solve("min(ceil(2.1), floor(3.9))"), 3.0);
-        assert_eq!(round(solve("sqrt(pow(3, 2) + pow(4, 2))")), 5.0); // pythagorean
+        assert_eq!(solve("sqrt(pow(3, 2) + pow(4, 2))"), 5.0); // pythagorean
     }
 }
 
@@ -712,5 +730,87 @@ mod error_tests {
         assert_eq!(solve("1+2"), 3.0);
         assert_eq!(solve("1   +   2"), 3.0);
         assert_eq!(solve("  10  /  2  "), 5.0);
+    }
+
+    #[test]
+    fn invalid_function_application() {
+        let mut calc = Calculator::new();
+        calc.solve("x = 5").unwrap();
+        // Cannot multiply a variable by a list of arguments as if it were a function
+        assert!(calc.solve("x(1, 2)").is_err());
+    }
+}
+
+mod user_function_tests {
+    use super::*;
+
+    #[test]
+    fn multi_parameter_function() {
+        let mut calc = Calculator::new();
+        // Area of a cylinder: 2*pi*r*h + 2*pi*r^2
+        calc.solve("cylinder_area(r, h) = 2pi*r*h + 2pi*r^2")
+            .unwrap();
+        let result = calc.solve("cylinder_area(3, 5)").unwrap();
+        let expected = round(
+            2.0 * std::f64::consts::PI * 3.0 * 5.0 + 2.0 * std::f64::consts::PI * f64::powi(3.0, 2),
+        );
+        assert_eq!(result, expected);
+    }
+
+    #[test]
+    fn function_redefinition() {
+        let mut calc = Calculator::new();
+        calc.solve("f(x) = x + 1").unwrap();
+        assert_eq!(calc.solve("f(5)").unwrap(), 6.0);
+
+        // Redefine f(x)
+        calc.solve("f(x) = x * 2").unwrap();
+        assert_eq!(calc.solve("f(5)").unwrap(), 10.0);
+    }
+
+    #[test]
+    fn nested_user_calls() {
+        let mut calc = Calculator::new();
+        calc.solve("square(x) = x * x").unwrap();
+        calc.solve("double(x) = x + x").unwrap();
+        // double(square(3)) = (3*3) + (3*3) = 18
+        assert_eq!(calc.solve("double(square(3))").unwrap(), 18.0);
+    }
+
+    #[test]
+    fn function_using_variables() {
+        let mut calc = Calculator::new();
+        calc.solve("k = 2").unwrap();
+        calc.solve("f(x) = k * x").unwrap();
+        assert_eq!(calc.solve("f(10)").unwrap(), 20.0);
+
+        // Changing k should change the result of the function call
+        calc.solve("k = 5").unwrap();
+        assert_eq!(calc.solve("f(10)").unwrap(), 50.0);
+    }
+
+    #[test]
+    fn arity_mismatch() {
+        let mut calc = Calculator::new();
+        calc.solve("f(x, y) = x + y").unwrap();
+        // Too few arguments
+        assert!(calc.solve("f(1)").is_err());
+        // Too many arguments
+        assert!(calc.solve("f(1, 2, 3)").is_err());
+    }
+
+    #[test]
+    fn illegal_parameter_definition() {
+        // Parameters must be identifiers, not numbers or expressions
+        assert!(solve_err("f(10) = 10 * 2").contains("must be an identifier"));
+    }
+
+    #[test]
+    fn test_function_composition() {
+        let mut calc = Calculator::new();
+        calc.solve("f(x) = 10x").unwrap();
+        calc.solve("g(x) = 20x").unwrap();
+
+        assert_eq!(calc.solve("f(g(10))").unwrap(), 2000.0);
     }
 }

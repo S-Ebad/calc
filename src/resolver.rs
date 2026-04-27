@@ -1,9 +1,6 @@
 use std::collections::HashMap;
 
-use crate::constant::Constant;
-use crate::expression::{Expression, IntoFunction};
-use crate::function::Function;
-use crate::operator::Operator;
+use crate::{expression::Expression, operator::Operator, user_function::UserFunction};
 
 macro_rules! err_ident {
     ($ident:expr) => {{
@@ -15,181 +12,107 @@ macro_rules! err_ident {
     }};
 }
 
-fn resolve_ident(ident: &str, vars: &HashMap<String, f64>) -> Result<Expression, String> {
-    if let Ok(cons) = Constant::from(ident) {
-        Ok(Expression::Number(cons.get_number()))
-    } else if let Some(var) = vars.get(ident) {
-        Ok(Expression::Number(*var))
-    } else {
-        return err_ident!(ident);
-    }
-}
-
 pub fn resolver(
     expr: &mut Expression,
     vars: &HashMap<String, f64>,
-    funcs: &HashMap<String, IntoFunction>,
+    funcs: &HashMap<String, UserFunction>,
+    depth: u32,
 ) -> Result<(), String> {
+    if depth > 100 {
+        return Err("Invalid Expression: Hit recursion limit".to_string());
+    }
+
     match expr {
-        Expression::Binary {
-            op: op @ (Operator::ImplicitMul | Operator::Sub),
-            lhs,
-            rhs,
-        } => {
-            // sin x?
-            let mut rhs_owned = rhs.clone();
-            let mut lhs_owned = lhs.clone();
-
-            let res_op = if op == &mut Operator::ImplicitMul {
-                Operator::Mul
-            } else {
-                Operator::Sub
-            };
-
-            *expr = match (lhs.as_ref(), rhs.as_ref()) {
-                (Expression::Identifier(ident), _) => {
-                    resolver(&mut rhs_owned, vars, funcs)?;
-
-                    if let Ok(func) = Function::from(ident) {
-                        let arg = if op == &Operator::Sub {
-                            Expression::Unary {
-                                op: Operator::Neg,
-                                expr: rhs_owned,
-                            }
-                        } else {
-                            *rhs_owned
-                        };
-
-                        Expression::Call {
-                            func,
-                            args: vec![arg],
-                        }
-                    } else {
-                        Expression::Binary {
-                            op: res_op,
-                            lhs: Box::new(resolve_ident(ident, vars)?),
-                            rhs: rhs_owned,
-                        }
-                    }
-                }
-
-                (_, Expression::Identifier(ident)) => {
-                    if let Ok(_) = Function::from(ident) {
-                        return Err(format!("Cannot call {} on rhs of implicit mul", ident));
-                    }
-
-                    resolver(&mut lhs_owned, vars, funcs)?;
-
-                    Expression::Binary {
-                        op: res_op,
-                        lhs: lhs_owned,
-                        rhs: Box::new(resolve_ident(ident, vars)?),
-                    }
-                }
-
-                _ => {
-                    resolver(&mut lhs_owned, vars, funcs)?;
-                    resolver(&mut rhs_owned, vars, funcs)?;
-
-                    Expression::Binary {
-                        op: res_op,
-                        lhs: lhs_owned,
-                        rhs: rhs_owned,
-                    }
-                }
-            };
-
-            Ok(())
-        }
         Expression::Binary { op: _, lhs, rhs } => {
-            resolver(lhs, vars, funcs)?;
-            resolver(rhs, vars, funcs)
+            resolver(lhs, vars, funcs, depth + 1)?;
+            resolver(rhs, vars, funcs, depth + 1)?;
         }
-
         Expression::Unary { op: _, expr } | Expression::Postfix { expr, op: _ } => {
-            resolver(expr, vars, funcs)
+            resolver(expr, vars, funcs, depth + 1)?;
         }
 
-        Expression::Apply {
-            identifier: ident,
-            args,
-        } => {
-            if let Ok(func) = Function::from(ident) {
-                let mut resolved_args = args.clone();
-                for arg in resolved_args.iter_mut() {
-                    resolver(arg, vars, funcs)?;
-                }
+        Expression::Call { func: _, args } => {
+            args.iter_mut()
+                .try_for_each(|x| resolver(x, vars, funcs, depth + 1))?;
+        }
 
-                *expr = Expression::Call {
-                    func,
-                    args: resolved_args,
-                };
-            } else if let Ok(cons) = Constant::from(ident) {
-                if args.len() != 1 {
-                    return Err(format!(
-                        "Invalid Application: Cannot multiply {} by multiple expressions ({})",
-                        ident,
-                        args.into_iter()
-                            .map(|a| format!("{}", a))
-                            .collect::<Vec<_>>()
-                            .join(", ")
-                    ));
-                }
+        Expression::Constant(cons) => {
+            *expr = Expression::Number(cons.get_number());
+        }
 
-                let mut rhs_expr = args[0].clone();
-                resolver(&mut rhs_expr, vars, funcs)?;
+        Expression::UserCall { func, args } => {
+            let args = args
+                .iter_mut()
+                .map(|expr| {
+                    resolver(expr, vars, funcs, depth + 1)?;
 
-                let num = Expression::Number(cons.get_number());
-                *expr = Expression::Binary {
-                    op: Operator::Mul,
-                    lhs: Box::new(num),
-                    rhs: Box::new(rhs_expr),
-                };
-            } else if let Some(var) = vars.get(ident) {
-                if args.len() != 1 {
-                    return Err(format!(
-                        "Invalid Application: Cannot multiply {} by multiple expressions ({})",
-                        ident,
-                        args.into_iter()
-                            .map(|a| format!("{}", a))
-                            .collect::<Vec<_>>()
-                            .join(", ")
-                    ));
-                }
+                    expr.eval()
+                })
+                .collect::<Result<Vec<f64>, _>>()?;
 
-                let mut rhs_expr = args[0].clone();
-                resolver(&mut rhs_expr, vars, funcs)?;
+            let func_def = funcs
+                .get(func)
+                .ok_or_else(|| format!("Invalid Expression: {} is undefined", func))?;
 
-                let num = Expression::Number(*var);
-                *expr = Expression::Binary {
-                    op: Operator::Mul,
-                    lhs: Box::new(num),
-                    rhs: Box::new(rhs_expr),
-                };
+            let body = func_def.clone().inline(&args)?;
+
+            *expr = *body;
+            resolver(expr, vars, funcs, depth + 1)?;
+        }
+
+        // check if its a variable
+        Expression::Identifier(ident) => {
+            // variable
+            if let Some(&var) = vars.get(ident) {
+                *expr = Expression::Number(var);
             } else {
                 return err_ident!(ident);
             }
-
-            Ok(())
         }
 
-        Expression::Identifier(ident) => {
-            if let Ok(_) = Function::from(ident) {
-                Err(format!(
-                    "Invalid Expression: Cannot use function '{}' as a value",
-                    ident
-                ))
-            } else if let Ok(cons) = Constant::from(ident) {
-                *expr = Expression::Number(cons.get_number());
-                Ok(())
-            } else if let Some(var) = vars.get(ident) {
-                *expr = Expression::Number(*var);
-                Ok(())
-            } else {
-                err_ident!(ident)
+        // check if its a variable implicit mul
+        Expression::Apply { identifier, args } => {
+            if let Some(&var) = vars.get(identifier) {
+                if args.len() != 1 {
+                    return Err(format!(
+                        "Invalid Application: Cannot multiply {} by multiple expressions ({})",
+                        identifier,
+                        args.into_iter()
+                            .map(|a| format!("{}", a))
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    ));
+                }
+
+                let mut rhs = args.pop().unwrap();
+                resolver(&mut rhs, vars, funcs, depth + 1)?;
+
+                let lhs = Expression::Number(var);
+
+                *expr = Expression::Binary {
+                    op: Operator::Mul,
+                    lhs: Box::new(lhs),
+                    rhs: Box::new(rhs),
+                };
+            } else if let Some(func_def) = funcs.get(identifier) {
+                let args = args
+                    .iter_mut()
+                    .map(|expr| {
+                        resolver(expr, vars, funcs, depth + 1)?;
+
+                        expr.eval()
+                    })
+                    .collect::<Result<Vec<f64>, _>>()?;
+
+                let body = func_def.clone().inline(&args)?;
+
+                *expr = *body;
+                resolver(expr, vars, funcs, depth + 1)?;
             }
         }
 
-        _ => Ok(()),
-    }
+        _ => (),
+    };
+
+    Ok(())
 }

@@ -5,7 +5,6 @@ pub enum Operator {
     Neg, // Unary-
     Pos, // Unary+
     Mul,
-    ImplicitMul,
     Div,
     Pow,
     Fac, // Factorial
@@ -41,9 +40,8 @@ impl Operator {
             Operator::Equal => (1, 0),
             Operator::Add | Operator::Sub => (2, 3),
             Operator::Mul | Operator::Div | Operator::Mod => (4, 5),
-            Operator::ImplicitMul => (6, 6),
-            Operator::Neg | Operator::Pos => (7, 8),
-            Operator::Pow => (9, 9),
+            Operator::Neg | Operator::Pos => (6, 7),
+            Operator::Pow => (8, 8),
             Operator::Fac => (100, 0),
         }
     }
@@ -153,7 +151,6 @@ impl std::fmt::Display for Operator {
             OP::Pow => "Pow",
             OP::Fac => "Fac",
             OP::Mod => "Mod",
-            OP::ImplicitMul => "IMul",
             OP::Equal => "Eq",
         };
 

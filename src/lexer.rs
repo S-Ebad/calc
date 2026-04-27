@@ -15,6 +15,7 @@ pub enum Token {
     RParen,
 }
 
+#[derive(Debug)]
 pub struct Lexer {
     tokens: Vec<Token>,
 }
@@ -42,10 +43,7 @@ impl Lexer {
 }
 
 impl Token {
-    pub fn from(
-        c: char,
-        iter: &mut Peekable<Chars>,
-    ) -> Result<Self, String> {
+    pub fn from(c: char, iter: &mut Peekable<Chars>) -> Result<Self, String> {
         if let Ok(op) = Operator::from(c) {
             iter.next();
 
@@ -57,7 +55,7 @@ impl Token {
         }
 
         if c.is_alphabetic() {
-            let mut word: String = take_while(iter, |c| c.is_alphabetic());
+            let mut word: String = take_while(iter, |c| c.is_alphabetic() || c == '_');
 
             // atan2
             if word == "atan" && iter.peek() == Some(&'2') {
