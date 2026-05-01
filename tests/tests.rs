@@ -739,6 +739,54 @@ mod error_tests {
         // Cannot multiply a variable by a list of arguments as if it were a function
         assert!(calc.solve("x(1, 2)").is_err());
     }
+
+    #[test]
+    fn invalid_function() {
+        let mut calc = Calculator::new();
+
+        // Func not yet defined
+        assert!(calc.solve("5 + Func(5)").is_err())
+    }
+}
+
+mod validation_tests {
+    use super::*;
+
+    #[test]
+    fn invalid_redefinition() {
+        let mut calc = Calculator::new();
+        
+        //ans is a reserved keyword
+        assert!(calc.solve("ans = 50").is_err());
+
+        // constants are reserved 
+        assert!(calc.solve("pi = 13").is_err());
+        assert!(calc.solve("e = 13").is_err());
+        assert!(calc.solve("inf = 13").is_err());
+
+
+        //sin is a built-in global
+        assert!(calc.solve("sin(x) = 50x").is_err());
+        assert!(calc.solve("cos(x, y, z) = 50x").is_err());
+
+        // u can't make functions variables. It'll just break during parsing
+        assert!(calc.solve("sin = 10").is_err());
+
+        // same with user-defined functions
+        calc.solve("f(x) = 2x").unwrap();
+        assert!(calc.solve("f = 10").is_err());
+
+        //weird quirk, u can't use defined functions as parameters
+        calc.solve("g(x) = 2x").unwrap();
+        //this is because parameters & arguments are parsed the same way. So when it sees "g" it
+        //thinks It's a function & tries to parse it.
+        assert!(calc.solve("h(g) = 2g").is_err());
+
+        // this is fine with variables though
+        calc.solve("x = 10").unwrap();
+        calc.solve("f(x) = 10x").unwrap();
+        assert_eq!(calc.solve("f(2)").unwrap(), 20.0);
+    }
 }
 
 mod user_function_tests {
@@ -803,6 +851,15 @@ mod user_function_tests {
     fn illegal_parameter_definition() {
         // Parameters must be identifiers, not numbers or expressions
         assert!(solve_err("f(10) = 10 * 2").contains("must be an identifier"));
+    }
+
+    #[test]
+    fn implicit_mul() {
+        let mut calc = Calculator::new();
+        calc.solve("f(x) = 2x").unwrap();
+
+        assert_eq!(calc.solve("f5").unwrap(), 10.0);
+        assert_eq!(calc.solve("2f5").unwrap(), 20.0);
     }
 
     #[test]

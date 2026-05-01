@@ -23,18 +23,20 @@
 
 ## Variables
 
-Assign with `=`. The special variable `ans` always holds the last result.
+Assign with `=`. The special variable ans always holds the last result and is read-only. It cannot be manually reassigned.
 
 ```
 > x = 5
 = 5
+
 > x * 2
 = 10
+
 > ans + 1
 = 11
 ```
 
-## Functions
+## Built-in Functions
 
 | Function              | Description                                        |
 |-----------------------|----------------------------------------------------|
@@ -83,4 +85,59 @@ Parentheses and function calls can often be omitted for brevity.
 sin pi     → sin(pi)
 sqrt2      → sqrt(2)
 abs -5     → abs(-5)
+3sinpi     → 3 * sin(pi)
 ```
+## User-defined Functions
+define with `name(param1, param2...) = body`.
+
+```
+> f(x) = x ^ 2 + 1
+
+> f(4)
+= 17
+
+> f2
+= 5
+
+> 2f2
+= 10
+
+> g(x, y) = sqrt(x^2 + y^2)
+
+> g(3, 4)
+= 5
+
+```
+
+Functions can reference other user functions and variables defined at call time. Redefining function replaces the previous definition (function overloading not supported).
+```
+> f(x) = g(x)
+
+> g(x) = 2x
+
+> f(10)
+= 20
+
+> x = 10
+
+> f(y) = x + g(y)
+
+> f(10)
+= 30
+```
+
+
+> Functions are inlined at call time. The body is substituted with argument values and then evaluated. There is a recursion depth limit of 100.
+
+## Parameter Shadowing Restriction
+Function parameters cannot share names with existing user-defined functions. This is due to the parser's eager identification of function symbols during the construction of the Abstract Syntax TreeFunction parameters cannot share names with existing user-defined functions. This is due to the parser's eager identification of function symbols during the construction of the Abstract Syntax Tree.
+
+```
+> f(x) = 2x
+
+> g(f) = 2f
+Error: Invalid Token: unexpected token RParen at start of expression
+```
+
+
+
