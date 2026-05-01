@@ -28,17 +28,20 @@ impl Lexer {
         Ok(Lexer { tokens })
     }
 
-    // consume next
-    pub fn next(&mut self) -> Option<Token> {
-        self.tokens.pop()
-    }
-
     pub fn peek(&mut self) -> Option<&Token> {
         self.tokens.last()
     }
 
     pub fn is_empty(&self) -> bool {
         self.tokens.is_empty()
+    }
+}
+
+impl Iterator for Lexer {
+    type Item = Token;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.tokens.pop()
     }
 }
 

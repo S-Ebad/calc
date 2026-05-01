@@ -55,10 +55,9 @@ impl Expression {
             lhs,
             rhs: _,
         } = self
+            && matches!(lhs.as_ref(), Expression::Identifier(_))
         {
-            if let Expression::Identifier(_) = lhs.as_ref() {
-                return true;
-            }
+            return true;
         }
 
         false
@@ -85,17 +84,12 @@ impl Expression {
             lhs,
             rhs: _,
         } = self
+            && matches!(
+                lhs.as_ref(),
+                Expression::Apply { .. } | Expression::UserCall { .. }
+            )
         {
-            // if its a call
-            if let Expression::Apply {
-                identifier: _,
-                args: _,
-            }
-            | Expression::UserCall { func: _, args: _ } = lhs.as_ref()
-            {
-                // UserCall means function redefinition
-                return true;
-            }
+            return true;
         }
 
         false
@@ -111,9 +105,7 @@ impl Expression {
                 Expression::Apply { identifier, args } => {
                     Some(UserFunction::new(identifier, args, rhs))
                 }
-                Expression::UserCall { func, args } => {
-                    Some(UserFunction::new(func, args, rhs))
-                }
+                Expression::UserCall { func, args } => Some(UserFunction::new(func, args, rhs)),
                 _ => None,
             },
 
@@ -130,19 +122,26 @@ impl Expression {
             Expression::Postfix { expr, op } => op.perform_op(expr.eval()?, None),
             Expression::Call { func, args } => {
                 let args = args
-                    .into_iter()
+                    .iter()
                     .map(|expr| expr.eval())
                     .collect::<Result<Vec<f64>, _>>()?;
 
                 func.call(&args)
             }
 
-            Expression::Constant(_)
-            | Expression::Apply {
-                identifier: _,
-                args: _,
-            }
-            | Expression::UserCall { func: _, args: _ } => unreachable!(),
+            // this shouldn't make it to eval
+            Expression::Constant(c) => Err(format!(
+                "Evaluation Error: constant '{}' was not resolved",
+                c
+            )),
+            Expression::Apply { identifier, .. } => Err(format!(
+                "Evaluation Error: unknown function or identifier '{}'",
+                identifier
+            )),
+            Expression::UserCall { func, .. } => Err(format!(
+                "Invalid Expression: user function '{}' was not inlined",
+                func
+            )),
         }
     }
 
@@ -162,6 +161,44 @@ impl Expression {
         }
 
         Ok(expr)
+    }
+
+    pub fn check_errors(&self) -> Result<(), String> {
+        //assignment checks
+        if let Expression::Binary {
+            op: Operator::Equal,
+            lhs,
+            ..
+        } = self
+        {
+            match lhs.as_ref() {
+                Expression::Apply { identifier: c, .. } | Expression::Identifier(c)
+                    if c == "ans" =>
+                {
+                    return Err(
+                        "Invalid Assignment: 'ans' is a reserved read-only variable".to_string()
+                    );
+                }
+
+                Expression::Constant(c) => {
+                    return Err(format!(
+                        "Invalid Assignment: attempt to re-define constant '{}'",
+                        c
+                    ));
+                }
+
+                Expression::Call { func, .. } => {
+                    return Err(format!(
+                        "Invalid Assignment: attempt to re-define built-in function '{}'",
+                        func
+                    ));
+                }
+
+                _ => (),
+            }
+        }
+
+        Ok(())
     }
 }
 
@@ -204,31 +241,26 @@ fn nud(lexer: &mut Lexer, funcs: &HashMap<String, UserFunction>) -> Result<Expre
                 consume_args(&mut args, lexer, funcs)?;
 
                 Expression::Call { func, args }
-
             } else if let Ok(cons) = Constant::from(&ident) {
                 Expression::Constant(cons)
-
             } else if let Some(func) = funcs.get(&ident) {
                 let mut args: Vec<Expression> = Vec::new();
                 consume_args(&mut args, lexer, funcs)?;
 
                 Expression::UserCall {
                     func: func.name.clone(),
-                    args: args,
+                    args,
                 }
-
             } else if lexer.peek() == Some(&Token::LParen) {
                 let mut args: Vec<Expression> = Vec::new();
                 consume_args(&mut args, lexer, funcs)?;
 
                 Expression::Apply {
                     identifier: ident,
-                    args: args,
+                    args,
                 }
-
             } else {
                 Expression::Identifier(ident)
-
             }
         }
 
@@ -257,7 +289,12 @@ fn nud(lexer: &mut Lexer, funcs: &HashMap<String, UserFunction>) -> Result<Expre
             }
         }
 
-        Some(t) => return Err(format!("Invalid Token: unexpected token {:?} at start of expression", t)),
+        Some(t) => {
+            return Err(format!(
+                "Invalid Token: unexpected token {:?} at start of expression",
+                t
+            ));
+        }
         None => return Err("Invalid Expression: unexpected end of input".to_string()),
     })
 }
@@ -272,7 +309,7 @@ fn parse_expression(
 
     loop {
         let (op, is_explicit) = match lexer.peek() {
-            Some(Token::Operator(op)) => (op.clone(), true),
+            Some(Token::Operator(op)) => (*op, true),
             Some(Token::LParen | Token::Identifier(_)) => (Operator::Mul, false),
             Some(Token::Number(_)) => {
                 if matches!(lhs, Expression::Number(_)) {
@@ -285,7 +322,12 @@ fn parse_expression(
             }
             Some(Token::RParen | Token::Comma) | None => break,
 
-            Some(t) => return Err(format!("Invalid Operator: unexpected token {:?} following expression", t)),
+            Some(t) => {
+                return Err(format!(
+                    "Invalid Operator: unexpected token {:?} following expression",
+                    t
+                ));
+            }
         };
 
         let (l_bp, r_bp) = if is_explicit { op.bp() } else { (6, 6) };

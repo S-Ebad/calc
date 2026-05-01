@@ -7,7 +7,7 @@ macro_rules! err_ident {
         if $ident == "ans" {
             Err("Invalid Identifier: ans not yet defined".to_string())
         } else {
-            Err(format!("Invalid Identifier: {}", $ident))
+            Err(format!("Invalid Identifier: unknown identifier '{}'", $ident))
         }
     }};
 }
@@ -77,7 +77,7 @@ pub fn resolver(
                     return Err(format!(
                         "Invalid Application: Cannot multiply {} by multiple expressions ({})",
                         identifier,
-                        args.into_iter()
+                        args.iter_mut()
                             .map(|a| format!("{}", a))
                             .collect::<Vec<_>>()
                             .join(", ")
@@ -108,6 +108,9 @@ pub fn resolver(
 
                 *expr = *body;
                 resolver(expr, vars, funcs, depth + 1)?;
+
+            } else {
+                return Err(format!("Invalid Identifier: unknown function or identifier '{}'", identifier))
             }
         }
 

@@ -18,6 +18,10 @@ fn main() {
 
         let _ = rl.add_history_entry(&input);
 
+        if input.trim() == "exit" {
+            break;
+        }
+
         match calculator.solve(&input) {
             Ok(ans) => println!("= {}", ans),
             Err(err) => eprintln!("Error: {}", err),

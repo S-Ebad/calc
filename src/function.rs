@@ -82,7 +82,7 @@ impl Function {
 
         match self {
             F::Max | F::Min => (2, usize::MAX),
-            F::Sqrt | F::Log => (1, 2),
+            F::Sqrt | F::Log  => (1, 2),
             F::Pow | F::Gcd | F::Atan2 | F::Lcm => (2, 2),
             F::Clamp => (3, 3),
 

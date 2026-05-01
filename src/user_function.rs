@@ -15,16 +15,16 @@ impl UserFunction {
     }
 
     pub fn is_valid(&self) -> Result<(), String> {
-        for param in self.params.iter() {
-            if !matches!(param, Expression::Identifier(_)) {
-                return Err(format!(
-                    "Invalid Function Definition: parameter must be an identifier, got {}",
+        self.params
+            .iter()
+            .find(|param| !matches!(param, Expression::Identifier(_)))
+            .map(|param| {
+                Err(format!(
+                    "Invalid Function Definition: parameter must be an identifier, got '{}'",
                     param
-                ));
-            }
-        }
-
-        Ok(())
+                ))
+            })
+            .unwrap_or(Ok(()))
     }
 
     pub fn inline(mut self, args: &[f64]) -> Result<Box<Expression>, String> {
@@ -78,7 +78,7 @@ impl UserFunction {
             }
             | Expression::Call { func: _, args }
             | Expression::UserCall { func: _, args } => {
-                args.iter_mut().for_each(|expr| Self::walk(expr, &vars))
+                args.iter_mut().for_each(|expr| Self::walk(expr, vars))
             }
         }
     }

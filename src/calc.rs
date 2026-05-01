@@ -30,6 +30,7 @@ impl Calculator {
         let mut lexer = Lexer::new(buf)?;
 
         let mut expr = Expression::parse(&mut lexer, &self.funcs)?;
+        expr.check_errors()?;
 
         if expr.is_func_def() {
             let func = expr.into_func().unwrap();
