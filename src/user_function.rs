@@ -1,4 +1,4 @@
-use std::{collections::HashMap, fmt};
+use std::{collections::HashMap, f64, fmt};
 
 use crate::expression::Expression;
 

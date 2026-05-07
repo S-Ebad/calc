@@ -7,14 +7,7 @@ Calc is a high-performance mathematical evaluation engine and REPL implemented i
 ```bash
 git clone https://github.com/S-Ebad/calc
 cd calc
-cargo build --release
-./target/release/calc
-```
-
-Or just run directly:
-
-```bash
-cargo run
+cargo run --release
 ```
 
 ## Usage

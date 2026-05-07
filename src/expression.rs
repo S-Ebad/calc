@@ -48,54 +48,15 @@ pub enum Expression {
     },
 }
 
+#[derive(Debug)]
+pub enum ExprKind {
+    FuncDef(UserFunction),
+    Assign(String, Expression),
+    Eval(Expression),
+}
+
 impl Expression {
-    pub fn is_assign(&self) -> bool {
-        if let Expression::Binary {
-            op: Operator::Equal,
-            lhs,
-            rhs: _,
-        } = self
-            && matches!(lhs.as_ref(), Expression::Identifier(_))
-        {
-            return true;
-        }
-
-        false
-    }
-
-    pub fn into_assign(self) -> Option<(String, Expression)> {
-        match self {
-            Expression::Binary {
-                op: Operator::Equal,
-                lhs,
-                rhs,
-            } => match *lhs {
-                Expression::Identifier(ident) => Some((ident, *rhs)),
-                _ => None,
-            },
-
-            _ => None,
-        }
-    }
-
-    pub fn is_func_def(&self) -> bool {
-        if let Expression::Binary {
-            op: Operator::Equal,
-            lhs,
-            rhs: _,
-        } = self
-            && matches!(
-                lhs.as_ref(),
-                Expression::Apply { .. } | Expression::UserCall { .. }
-            )
-        {
-            return true;
-        }
-
-        false
-    }
-
-    pub fn into_func(self) -> Option<UserFunction> {
+    pub fn classify(self) -> ExprKind {
         match self {
             Expression::Binary {
                 op: Operator::Equal,
@@ -103,13 +64,22 @@ impl Expression {
                 rhs,
             } => match *lhs {
                 Expression::Apply { identifier, args } => {
-                    Some(UserFunction::new(identifier, args, rhs))
+                    ExprKind::FuncDef(UserFunction::new(identifier, args, rhs))
                 }
-                Expression::UserCall { func, args } => Some(UserFunction::new(func, args, rhs)),
-                _ => None,
+
+                Expression::UserCall { func, args } => {
+                    ExprKind::FuncDef(UserFunction::new(func, args, rhs))
+                }
+
+                Expression::Identifier(ident) => ExprKind::Assign(ident, *rhs),
+                lhs => ExprKind::Eval(Expression::Binary {
+                    op: Operator::Equal,
+                    lhs: Box::new(lhs),
+                    rhs,
+                }),
             },
 
-            _ => None,
+            other => ExprKind::Eval(other),
         }
     }
 

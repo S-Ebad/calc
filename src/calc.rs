@@ -1,9 +1,11 @@
-use crate::expression::Expression;
+use crate::expression::{ExprKind, Expression};
 use crate::lexer::Lexer;
 use crate::resolver::resolver;
 use crate::user_function::UserFunction;
 
 use std::collections::HashMap;
+
+const PRECISION: f64 = 1e10;
 
 pub struct Calculator {
     pub variables: HashMap<String, f64>,
@@ -29,34 +31,34 @@ impl Calculator {
     pub fn solve(&mut self, buf: &str) -> Result<f64, String> {
         let mut lexer = Lexer::new(buf)?;
 
-        let mut expr = Expression::parse(&mut lexer, &self.funcs)?;
+        let expr = Expression::parse(&mut lexer, &self.funcs)?;
         expr.check_errors()?;
 
-        if expr.is_func_def() {
-            let func = expr.into_func().unwrap();
+        let ans = match expr.classify() {
+            ExprKind::FuncDef(user_function) => {
+                user_function.is_valid()?;
+                self.set_user_function(user_function);
 
-            func.is_valid()?;
-            self.set_user_function(func);
+                return Ok(0.0);
+            }
 
-            return Ok(0.0);
-        }
+            ExprKind::Assign(name, mut expr) => {
+                resolver(&mut expr, &self.variables, &self.funcs, 0)?;
 
-        let ans = if expr.is_assign() {
-            let (name, mut expr) = expr.into_assign().unwrap();
+                let ans = expr.eval()?;
+                self.set_variable(&name, ans);
 
-            resolver(&mut expr, &self.variables, &self.funcs, 0)?;
+                ans
+            }
 
-            let ans = expr.eval()?;
-            self.set_variable(&name, ans);
+            ExprKind::Eval(mut expr) => {
+                resolver(&mut expr, &self.variables, &self.funcs, 0)?;
 
-            ans
-        } else {
-            resolver(&mut expr, &self.variables, &self.funcs, 0)?;
-
-            expr.eval()?
+                expr.eval()?
+            }
         };
 
-        let ans = (ans * 1e10).round() / 1e10;
+        let ans = (ans * PRECISION).round() / PRECISION;
         self.set_variable("ans", ans);
 
         Ok(ans)
