@@ -1,4 +1,4 @@
-use std::{collections::HashMap, f64, fmt};
+use std::{f64, fmt};
 
 use crate::expression::Expression;
 
@@ -38,27 +38,33 @@ impl UserFunction {
             ));
         }
 
-        let mut vars: HashMap<String, f64> = HashMap::new();
-
-        for (name, val) in self.params.into_iter().zip(args.iter()) {
-            if let Expression::Identifier(name) = name {
-                vars.insert(name, *val);
-            }
-        }
+        let vars: Vec<(String, f64)> = self
+            .params
+            .into_iter()
+            .zip(args.iter())
+            .filter_map(|(name, val)| match name {
+                Expression::Identifier(name) => Some((name, *val)),
+                _ => None,
+            })
+            .collect();
 
         Self::walk(&mut self.body, &vars);
 
         Ok(self.body)
     }
 
-    fn walk(expr: &mut Expression, vars: &HashMap<String, f64>) {
+    fn get_var<'a>(vars: &'a [(String, f64)], target: &str) -> Option<&'a f64> {
+        vars.iter().find(|(name, _)| name == target).map(|(_, v)| v)
+    }
+
+    fn walk(expr: &mut Expression, vars: &[(String, f64)]) {
         match expr {
             Expression::Number(_) => (),
             Expression::Constant(_) => (),
 
             Expression::Identifier(ident) => {
                 // param
-                if let Some(num) = vars.get(ident) {
+                if let Some(num) =Self::get_var(vars, ident) {
                     *expr = Expression::Number(*num);
                 }
             }
@@ -68,16 +74,19 @@ impl UserFunction {
                 Self::walk(lhs, vars);
             }
 
-            Expression::Unary { op: _, expr } | Expression::Postfix { expr, op: _ } => {
+            Expression::Unary { op: _, expr } | Expression::Postfix { expr, .. } => {
                 Self::walk(expr, vars);
             }
 
-            Expression::Apply {
-                identifier: _,
-                args,
+            Expression::Apply { identifier, args } => {
+                args.iter_mut().for_each(|expr| Self::walk(expr, vars));
+
+                if let Some(num) = Self::get_var(vars, identifier) {
+                    *expr = Expression::Number(*num);
+                }
             }
-            | Expression::Call { func: _, args }
-            | Expression::UserCall { func: _, args } => {
+
+            Expression::Call { func: _, args } | Expression::UserCall { func: _, args } => {
                 args.iter_mut().for_each(|expr| Self::walk(expr, vars))
             }
         }

@@ -82,7 +82,7 @@ impl Function {
 
         match self {
             F::Max | F::Min => (2, usize::MAX),
-            F::Sqrt | F::Log  => (1, 2),
+            F::Sqrt | F::Log => (1, 2),
             F::Pow | F::Gcd | F::Atan2 | F::Lcm => (2, 2),
             F::Clamp => (3, 3),
 
@@ -123,7 +123,21 @@ impl Function {
             F::Tanh => args[0].tanh(),
             F::Sin => args[0].sin(),
             F::Cos => args[0].cos(),
-            F::Clamp => args[0].clamp(args[1], args[2]),
+            F::Clamp => {
+                //clamp(x, min, max). min <= max.
+                let x = args[0];
+                let min = args[1];
+                let max = args[2];
+
+                if min > max {
+                    return Err(format!(
+                        "Invalid Arguments: clamp range min ({}) must be less than max ({})",
+                        min, max
+                    ));
+                }
+
+                x.clamp(min, max)
+            }
             F::Lcm => lcm(args[0], args[1]),
             F::Gcd => gcd(args[0], args[1]),
 
