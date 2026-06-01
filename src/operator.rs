@@ -1,3 +1,17 @@
+use std::{iter::Peekable, str::Chars};
+
+macro_rules! fbool {
+    ($b:expr) => {
+        ($b as u8) as f64
+    };
+}
+
+macro_rules! ftruth {
+    ($x:expr) => {
+        ($x != 0.0)
+    };
+}
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Operator {
     Add, // Binary+
@@ -10,6 +24,16 @@ pub enum Operator {
     Fac, // Factorial
     Mod, // modulos
     Equal,
+
+    IsEqual,      // ==
+    NotEqual,     // !=
+    LessThan,     // <
+    GreaterThan,  // >
+    LessEqual,    // <=
+    GreaterEqual, // >=
+
+    And,
+    Or,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -20,16 +44,74 @@ pub enum Assoc {
 
 impl Operator {
     // get operator from char. last_token is needed for Unary
-    pub fn from(c: char) -> Result<Self, String> {
+    pub fn from(c: char, iter: &mut Peekable<Chars>) -> Result<Self, String> {
         match c {
+            '&' => {
+                iter.next();
+
+                if matches!(iter.peek(), Some(&'&')) {
+                    Ok(Operator::And)
+                } else {
+                    Err(format!("Invalid Operator: {}", c))
+                }
+            }
+
+            '|' => {
+                iter.next();
+
+                if matches!(iter.peek(), Some(&'|')) {
+                    Ok(Operator::Or)
+                } else {
+                    Err(format!("Invalid Operator: {}", c))
+                }
+            }
+
+            '=' => {
+                iter.next();
+
+                if matches!(iter.peek(), Some(&'=')) {
+                    Ok(Operator::IsEqual)
+                } else {
+                    Ok(Operator::Equal)
+                }
+            }
+
+            '>' => {
+                iter.next();
+
+                if matches!(iter.peek(), Some(&'=')) {
+                    Ok(Operator::GreaterEqual)
+                } else {
+                    Ok(Operator::GreaterThan)
+                }
+            }
+
+            '<' => {
+                iter.next();
+
+                if matches!(iter.peek(), Some(&'=')) {
+                    Ok(Operator::LessEqual)
+                } else {
+                    Ok(Operator::LessThan)
+                }
+            }
+
+            '!' => {
+                iter.next();
+
+                if matches!(iter.peek(), Some(&'=')) {
+                    Ok(Operator::NotEqual)
+                } else {
+                    Ok(Operator::Fac)
+                }
+            }
+
             '+' => Ok(Operator::Add),
             '-' => Ok(Operator::Sub),
             '/' => Ok(Operator::Div),
             '*' => Ok(Operator::Mul),
             '^' => Ok(Operator::Pow),
-            '!' => Ok(Operator::Fac),
             '%' => Ok(Operator::Mod),
-            '=' => Ok(Operator::Equal),
             _ => Err(format!("Invalid Operator: {}", c)),
         }
     }
@@ -37,12 +119,22 @@ impl Operator {
     // binding power
     pub fn bp(&self) -> (u8, u8) {
         match self {
-            Operator::Equal => (1, 0),
-            Operator::Add | Operator::Sub => (2, 3),
-            Operator::Mul | Operator::Div | Operator::Mod => (4, 5),
-            Operator::Neg | Operator::Pos => (6, 7),
-            Operator::Pow => (8, 8),
-            Operator::Fac => (100, 0),
+            Operator::Or => (1, 2),
+            Operator::And => (3, 4),
+
+            Operator::Equal => (5, 6),
+            Operator::IsEqual => (5, 6),
+            Operator::NotEqual => (5, 6),
+            Operator::LessThan => (5, 6),
+            Operator::GreaterThan => (5, 6),
+            Operator::LessEqual => (5, 6),
+            Operator::GreaterEqual => (5, 6),
+
+            Operator::Add | Operator::Sub => (7, 8),
+            Operator::Mul | Operator::Div | Operator::Mod => (9, 10),
+            Operator::Neg | Operator::Pos => (11, 12),
+            Operator::Pow => (13, 12),
+            Operator::Fac => (14, 0),
         }
     }
 
@@ -56,7 +148,6 @@ impl Operator {
     pub fn is_left_assoc(&self) -> bool {
         matches!(self.associativity(), Assoc::Left)
     }
-
 
     // perform operator. It'll perform the operator depending on if num2 is supplied or not
     pub fn perform_op(&self, num1: f64, num2: Option<f64>) -> Result<f64, String> {
@@ -119,6 +210,16 @@ impl Operator {
                 f64::powf(num1, num2)
             }
 
+            OP::IsEqual => fbool!(num1 == num2),
+            OP::NotEqual => fbool!(num1 != num2),
+            OP::LessThan => fbool!(num1 < num2),
+            OP::GreaterThan => fbool!(num1 > num2),
+            OP::LessEqual => fbool!(num1 <= num2),
+            OP::GreaterEqual => fbool!(num1 >= num2),
+
+            OP::And => fbool!(ftruth!(num1) && ftruth!(num2)),
+            OP::Or => fbool!(ftruth!(num1) || ftruth!(num2)),
+
             _ => {
                 return Err(format!(
                     "Invalid Token: {:?} Must be handled during parser",
@@ -152,6 +253,15 @@ impl std::fmt::Display for Operator {
             OP::Fac => "Fac",
             OP::Mod => "Mod",
             OP::Equal => "Eq",
+
+            OP::IsEqual => "IsEqual",
+            OP::NotEqual => "NotEqual",
+            OP::LessThan => "LessThan",
+            OP::GreaterThan => "GreaterThan",
+            OP::LessEqual => "LessEqual",
+            OP::GreaterEqual => "GreaterEqual",
+            OP::And => "AND",
+            OP::Or => "OR",
         };
 
         write!(f, "{}", name)

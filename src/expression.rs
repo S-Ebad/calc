@@ -300,7 +300,7 @@ fn parse_expression(
             }
         };
 
-        let (l_bp, r_bp) = if is_explicit { op.bp() } else { (6, 6) };
+        let (l_bp, r_bp) = if is_explicit { op.bp() } else { (11, 12) };
         if l_bp < min_bp {
             break;
         }

@@ -47,7 +47,7 @@ impl Iterator for Lexer {
 
 impl Token {
     pub fn from(c: char, iter: &mut Peekable<Chars>) -> Result<Self, String> {
-        if let Ok(op) = Operator::from(c) {
+        if let Ok(op) = Operator::from(c, iter) {
             iter.next();
 
             return Ok(Token::Operator(op));
