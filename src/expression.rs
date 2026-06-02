@@ -5,6 +5,7 @@ use crate::constant::Constant;
 use crate::function::Function;
 use crate::lexer::{Lexer, Token};
 use crate::operator::Operator;
+use crate::resolver::resolver;
 use crate::user_function::UserFunction;
 
 #[derive(Debug, PartialEq, Clone)]
@@ -46,6 +47,12 @@ pub enum Expression {
         func: String, //hold name only, reference is somewhere else
         args: Vec<Expression>,
     },
+
+    If {
+        condition: Box<Expression>,
+        then: Box<Expression>,
+        else_: Box<Expression>,
+    },
 }
 
 #[derive(Debug)]
@@ -83,20 +90,58 @@ impl Expression {
         }
     }
 
-    pub fn eval(&self) -> Result<f64, String> {
+    pub fn eval(
+        &mut self,
+        vars: &HashMap<String, f64>,
+        funcs: &HashMap<String, UserFunction>,
+    ) -> Result<f64, String> {
+
         match self {
             Expression::Identifier(s) => Err(format!("Unable to evaluate {:?}", s)),
             Expression::Number(num) => Ok(*num),
-            Expression::Binary { op, lhs, rhs } => op.perform_op(lhs.eval()?, Some(rhs.eval()?)),
-            Expression::Unary { op, expr } => op.perform_op(expr.eval()?, None),
-            Expression::Postfix { expr, op } => op.perform_op(expr.eval()?, None),
+            Expression::Binary { op, lhs, rhs } => {
+                op.perform_op(lhs.eval(vars, funcs)?, Some(rhs.eval(vars, funcs)?))
+            }
+            Expression::Unary { op, expr } => op.perform_op(expr.eval(vars, funcs)?, None),
+            Expression::Postfix { expr, op } => op.perform_op(expr.eval(vars, funcs)?, None),
             Expression::Call { func, args } => {
                 let args = args
-                    .iter()
-                    .map(|expr| expr.eval())
+                    .iter_mut()
+                    .map(|expr| expr.eval(vars, funcs))
                     .collect::<Result<Vec<f64>, _>>()?;
 
                 func.call(&args)
+            }
+
+            Expression::If {
+                condition: condit,
+                then,
+                else_,
+            } => {
+                if condit.eval(vars, funcs)? != 0.0 {
+                    then.eval(vars, funcs)
+                } else {
+                    else_.eval(vars, funcs)
+                }
+            }
+
+            Expression::UserCall { func, args } => {
+                let args = args
+                    .iter_mut()
+                    .map(|expr| {
+                        resolver(expr, vars, funcs, 0)?;
+                        expr.eval(vars, funcs)
+                    })
+                    .collect::<Result<Vec<f64>, _>>()?;
+
+                let func_def = funcs
+                    .get(func)
+                    .ok_or_else(|| format!("Invalid Expression: {} is undefined", func))?;
+
+                let mut body = func_def.clone().inline(&args)?;
+                resolver(body.as_mut(), vars, funcs, 0)?;
+
+                body.eval(vars, funcs)
             }
 
             // this shouldn't make it to eval
@@ -104,14 +149,12 @@ impl Expression {
                 "Evaluation Error: constant '{}' was not resolved",
                 c
             )),
-            Expression::Apply { identifier, .. } => Err(format!(
-                "Evaluation Error: unknown function or identifier '{}'",
-                identifier
-            )),
-            Expression::UserCall { func, .. } => Err(format!(
-                "Invalid Expression: user function '{}' was not inlined",
-                func
-            )),
+            Expression::Apply { identifier, .. } => {
+                Err(format!(
+                    "Evaluation Error: unknown function or identifier '{}'",
+                    identifier
+                ))
+            }
         }
     }
 
@@ -269,6 +312,75 @@ fn nud(lexer: &mut Lexer, funcs: &HashMap<String, UserFunction>) -> Result<Expre
     })
 }
 
+fn led(
+    lexer: &mut Lexer,
+    lhs: Expression,
+    funcs: &HashMap<String, UserFunction>,
+) -> Result<Expression, String> {
+    match lexer.peek() {
+        //Expression is done! Stop parsing and group.
+        Some(Token::RParen | Token::Comma | Token::Colon) => Ok(lhs),
+
+        Some(token @ (Token::LParen | Token::Identifier(_) | Token::Number(_))) => {
+            if matches!(*token, Token::Number(_)) && matches!(lhs, Expression::Number(_)) {
+                return Err("Invalid Expression: missing operator between expressions".to_string());
+            }
+
+            let op = Operator::ImplicitMul;
+            let (_, r_bp) = op.bp();
+            let rhs = parse_expression(lexer, r_bp, funcs)?;
+
+            Ok(Expression::Binary {
+                op,
+                lhs: Box::new(lhs),
+                rhs: Box::new(rhs),
+            })
+        }
+
+        Some(Token::QuestionMark) => {
+            lexer.next();
+
+            let then = parse_expression(lexer, 0, funcs)?;
+            if lexer.next() != Some(Token::Colon) {
+                return Err("Invalid Expression: Expected : after ternary ? block".to_string());
+            }
+            let otherwise = parse_expression(lexer, 0, funcs)?;
+
+            Ok(Expression::If {
+                condition: Box::new(lhs),
+                then: Box::new(then),
+                else_: Box::new(otherwise),
+            })
+        }
+
+        Some(Token::Operator(op)) => {
+            let op = *op;
+            lexer.next();
+
+            if op.is_postfix() {
+                return Ok(Expression::Postfix {
+                    expr: Box::new(lhs),
+                    op,
+                });
+            }
+
+            let (_, r_bp) = op.bp();
+            let rhs = parse_expression(lexer, r_bp, funcs)?;
+
+            Ok(Expression::Binary {
+                op,
+                lhs: Box::new(lhs),
+                rhs: Box::new(rhs),
+            })
+        }
+
+        t => {
+            println!("{:?} hit unreachable!", t);
+            unreachable!()
+        }
+    }
+}
+
 // pratt parser
 fn parse_expression(
     lexer: &mut Lexer,
@@ -277,57 +389,12 @@ fn parse_expression(
 ) -> Result<Expression, String> {
     let mut lhs = nud(lexer, funcs)?;
 
-    loop {
-        let (op, is_explicit) = match lexer.peek() {
-            Some(Token::Operator(op)) => (*op, true),
-            Some(Token::LParen | Token::Identifier(_)) => (Operator::Mul, false),
-            Some(Token::Number(_)) => {
-                if matches!(lhs, Expression::Number(_)) {
-                    return Err(
-                        "Invalid Expression: missing operator between expressions".to_string()
-                    );
-                }
-
-                (Operator::Mul, false)
-            }
-            Some(Token::RParen | Token::Comma) | None => break,
-
-            Some(t) => {
-                return Err(format!(
-                    "Invalid Operator: unexpected token {:?} following expression",
-                    t
-                ));
-            }
-        };
-
-        let (l_bp, r_bp) = if is_explicit { op.bp() } else { (11, 12) };
-        if l_bp < min_bp {
+    while let Some(token) = lexer.peek() {
+        if token.left_bp() <= min_bp {
             break;
         }
 
-        // consume if its an operator token
-        if is_explicit {
-            lexer.next();
-        }
-
-        // led
-        // postfix exception
-        if op.is_postfix() {
-            lhs = Expression::Postfix {
-                op,
-                expr: Box::new(lhs),
-            };
-
-            continue;
-        }
-
-        let rhs = parse_expression(lexer, r_bp, funcs)?;
-
-        lhs = Expression::Binary {
-            op,
-            lhs: Box::new(lhs),
-            rhs: Box::new(rhs),
-        };
+        lhs = led(lexer, lhs, funcs)?;
     }
 
     Ok(lhs)
@@ -376,6 +443,11 @@ impl fmt::Display for Expression {
                 write!(f, "UserCall({}, [{}])", func, args_str)
             }
             Expression::Constant(constant) => write!(f, "Const({})", constant),
+            Expression::If {
+                condition: condit,
+                then,
+                else_,
+            } => write!(f, "If(condition={}, then={}, else={})", condit, then, else_),
         }
     }
 }

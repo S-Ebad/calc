@@ -281,9 +281,6 @@ fn gcd(mut a: f64, mut b: f64) -> f64 {
 
     if b > a {
         std::mem::swap(&mut a, &mut b);
-        // let temp = a;
-        // a = b;
-        // b = temp;
     }
 
     while b > 0f64 {

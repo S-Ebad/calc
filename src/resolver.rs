@@ -7,7 +7,10 @@ macro_rules! err_ident {
         if $ident == "ans" {
             Err("Invalid Identifier: ans not yet defined".to_string())
         } else {
-            Err(format!("Invalid Identifier: unknown identifier '{}'", $ident))
+            Err(format!(
+                "Invalid Identifier: unknown identifier '{}'",
+                $ident
+            ))
         }
     }};
 }
@@ -40,25 +43,25 @@ pub fn resolver(
             *expr = Expression::Number(cons.get_number());
         }
 
-        Expression::UserCall { func, args } => {
-            let args = args
-                .iter_mut()
-                .map(|expr| {
-                    resolver(expr, vars, funcs, depth + 1)?;
-
-                    expr.eval()
-                })
-                .collect::<Result<Vec<f64>, _>>()?;
-
-            let func_def = funcs
-                .get(func)
-                .ok_or_else(|| format!("Invalid Expression: {} is undefined", func))?;
-
-            let body = func_def.clone().inline(&args)?;
-
-            *expr = *body;
-            resolver(expr, vars, funcs, depth + 1)?;
-        }
+        // Expression::UserCall { func, args } => {
+        //     let args = args
+        //         .iter_mut()
+        //         .map(|expr| {
+        //             resolver(expr, vars, funcs, depth + 1)?;
+        //
+        //             expr.eval()
+        //         })
+        //         .collect::<Result<Vec<f64>, _>>()?;
+        //
+        //     let func_def = funcs
+        //         .get(func)
+        //         .ok_or_else(|| format!())?;
+        //
+        //     let body = func_def.clone().inline(&args)?;
+        //
+        //     *expr = *body;
+        //     resolver(expr, vars, funcs, depth + 1)?;
+        // }
 
         // check if its a variable
         Expression::Identifier(ident) => {
@@ -95,23 +98,27 @@ pub fn resolver(
                     rhs: Box::new(rhs),
                 };
             } else if let Some(func_def) = funcs.get(identifier) {
-                let args = args
-                    .iter_mut()
-                    .map(|expr| {
-                        resolver(expr, vars, funcs, depth + 1)?;
-
-                        expr.eval()
-                    })
-                    .collect::<Result<Vec<f64>, _>>()?;
-
-                let body = func_def.clone().inline(&args)?;
-
-                *expr = *body;
-                resolver(expr, vars, funcs, depth + 1)?;
+                *expr = Expression::UserCall {
+                    func: func_def.name.clone(),
+                    args: args.clone(),
+                };
 
             } else {
-                return Err(format!("Invalid Identifier: unknown function or identifier '{}'", identifier))
+                return Err(format!(
+                    "Invalid Identifier: unknown function or identifier '{}'",
+                    identifier
+                ));
             }
+        }
+
+        Expression::If {
+            condition,
+            then,
+            else_,
+        } => {
+            resolver(condition, vars, funcs, depth + 1)?;
+            resolver(then, vars, funcs, depth + 1)?;
+            resolver(else_, vars, funcs, depth + 1)?;
         }
 
         _ => (),

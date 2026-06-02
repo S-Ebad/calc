@@ -13,6 +13,9 @@ pub enum Token {
     Comma,
     LParen,
     RParen,
+
+    QuestionMark,
+    Colon,
 }
 
 #[derive(Debug)]
@@ -72,12 +75,28 @@ impl Token {
             '(' => Ok(Token::LParen),
             ')' => Ok(Token::RParen),
             ',' => Ok(Token::Comma),
+            '?' => Ok(Token::QuestionMark),
+            ':' => Ok(Token::Colon),
 
             _ => Err(format!("Invalid Token: '{}'", c)),
         };
 
         iter.next();
         result
+    }
+
+    pub fn left_bp(&self) -> u8 {
+        match self {
+            Token::Operator(op) => op.bp().0,
+            Token::LParen | Token::Identifier(_) | Token::Number(_) => {
+                Operator::ImplicitMul.bp().0 // Uses 11
+            }
+
+            //binds between Equal and everything else
+            Token::QuestionMark => 1,
+
+            _ => 0,
+        }
     }
 }
 
@@ -156,16 +175,4 @@ fn tokenize(expr: &str) -> Result<Vec<Token>, String> {
     }
 
     Ok(tokens)
-}
-
-impl std::fmt::Display for Constant {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let name = match self {
-            Constant::PI => "PI",
-            Constant::E => "e",
-            Constant::Inf => "Inf",
-        };
-
-        write!(f, "{}", name)
-    }
 }

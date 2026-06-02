@@ -45,7 +45,7 @@ impl Calculator {
             ExprKind::Assign(name, mut expr) => {
                 resolver(&mut expr, &self.variables, &self.funcs, 0)?;
 
-                let ans = expr.eval()?;
+                let ans = expr.eval(&self.variables, &self.funcs)?;
                 self.set_variable(&name, ans);
 
                 ans
@@ -54,7 +54,7 @@ impl Calculator {
             ExprKind::Eval(mut expr) => {
                 resolver(&mut expr, &self.variables, &self.funcs, 0)?;
 
-                expr.eval()?
+                expr.eval(&self.variables, &self.funcs)?
             }
         };
 

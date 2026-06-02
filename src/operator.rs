@@ -1,12 +1,12 @@
 use std::{iter::Peekable, str::Chars};
 
-macro_rules! fbool {
+macro_rules! to_bool {
     ($b:expr) => {
         ($b as u8) as f64
     };
 }
 
-macro_rules! ftruth {
+macro_rules! is_true {
     ($x:expr) => {
         ($x != 0.0)
     };
@@ -19,6 +19,7 @@ pub enum Operator {
     Neg, // Unary-
     Pos, // Unary+
     Mul,
+    ImplicitMul,
     Div,
     Pow,
     Fac, // Factorial
@@ -42,34 +43,27 @@ pub enum Assoc {
     Right,
 }
 
+// simple helper
+fn is_next_token(iter: &mut Peekable<Chars>, val: Option<&char>) -> bool {
+    iter.next();
+
+    iter.peek() == val
+}
+
 impl Operator {
     // get operator from char. last_token is needed for Unary
     pub fn from(c: char, iter: &mut Peekable<Chars>) -> Result<Self, String> {
         match c {
-            '&' => {
-                iter.next();
-
-                if matches!(iter.peek(), Some(&'&')) {
-                    Ok(Operator::And)
-                } else {
-                    Err(format!("Invalid Operator: {}", c))
-                }
+            '&' if is_next_token(iter, Some(&'&')) => {
+                Ok(Operator::And)
             }
 
-            '|' => {
-                iter.next();
-
-                if matches!(iter.peek(), Some(&'|')) {
-                    Ok(Operator::Or)
-                } else {
-                    Err(format!("Invalid Operator: {}", c))
-                }
+            '|' if is_next_token(iter, Some(&'|')) => {
+                Ok(Operator::Or)
             }
 
             '=' => {
-                iter.next();
-
-                if matches!(iter.peek(), Some(&'=')) {
+                if is_next_token(iter, Some(&'=')) {
                     Ok(Operator::IsEqual)
                 } else {
                     Ok(Operator::Equal)
@@ -77,9 +71,7 @@ impl Operator {
             }
 
             '>' => {
-                iter.next();
-
-                if matches!(iter.peek(), Some(&'=')) {
+                if is_next_token(iter, Some(&'=')) {
                     Ok(Operator::GreaterEqual)
                 } else {
                     Ok(Operator::GreaterThan)
@@ -87,9 +79,7 @@ impl Operator {
             }
 
             '<' => {
-                iter.next();
-
-                if matches!(iter.peek(), Some(&'=')) {
+                if is_next_token(iter, Some(&'=')) {
                     Ok(Operator::LessEqual)
                 } else {
                     Ok(Operator::LessThan)
@@ -97,9 +87,7 @@ impl Operator {
             }
 
             '!' => {
-                iter.next();
-
-                if matches!(iter.peek(), Some(&'=')) {
+                if is_next_token(iter, Some(&'=')) {
                     Ok(Operator::NotEqual)
                 } else {
                     Ok(Operator::Fac)
@@ -119,10 +107,11 @@ impl Operator {
     // binding power
     pub fn bp(&self) -> (u8, u8) {
         match self {
+            Operator::Equal => (1, 0),
+
             Operator::Or => (1, 2),
             Operator::And => (3, 4),
 
-            Operator::Equal => (5, 6),
             Operator::IsEqual => (5, 6),
             Operator::NotEqual => (5, 6),
             Operator::LessThan => (5, 6),
@@ -132,6 +121,7 @@ impl Operator {
 
             Operator::Add | Operator::Sub => (7, 8),
             Operator::Mul | Operator::Div | Operator::Mod => (9, 10),
+            Operator::ImplicitMul => (11, 11),
             Operator::Neg | Operator::Pos => (11, 12),
             Operator::Pow => (13, 12),
             Operator::Fac => (14, 0),
@@ -182,7 +172,7 @@ impl Operator {
         let result = match self {
             OP::Add => num1 + num2,
             OP::Sub => num1 - num2,
-            OP::Mul => num1 * num2,
+            OP::Mul | OP::ImplicitMul => num1 * num2,
             OP::Mod => num1 % num2,
 
             OP::Div => {
@@ -210,15 +200,15 @@ impl Operator {
                 f64::powf(num1, num2)
             }
 
-            OP::IsEqual => fbool!(num1 == num2),
-            OP::NotEqual => fbool!(num1 != num2),
-            OP::LessThan => fbool!(num1 < num2),
-            OP::GreaterThan => fbool!(num1 > num2),
-            OP::LessEqual => fbool!(num1 <= num2),
-            OP::GreaterEqual => fbool!(num1 >= num2),
+            OP::IsEqual => to_bool!(num1 == num2),
+            OP::NotEqual => to_bool!(num1 != num2),
+            OP::LessThan => to_bool!(num1 < num2),
+            OP::GreaterThan => to_bool!(num1 > num2),
+            OP::LessEqual => to_bool!(num1 <= num2),
+            OP::GreaterEqual => to_bool!(num1 >= num2),
 
-            OP::And => fbool!(ftruth!(num1) && ftruth!(num2)),
-            OP::Or => fbool!(ftruth!(num1) || ftruth!(num2)),
+            OP::And => to_bool!(is_true!(num1) && is_true!(num2)),
+            OP::Or => to_bool!(is_true!(num1) || is_true!(num2)),
 
             _ => {
                 return Err(format!(
@@ -248,6 +238,7 @@ impl std::fmt::Display for Operator {
             OP::Neg => "USub",
             OP::Pos => "UAdd",
             OP::Mul => "Mul",
+            OP::ImplicitMul => "IMul",
             OP::Div => "Div",
             OP::Pow => "Pow",
             OP::Fac => "Fac",

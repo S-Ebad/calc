@@ -89,6 +89,12 @@ impl UserFunction {
             Expression::Call { func: _, args } | Expression::UserCall { func: _, args } => {
                 args.iter_mut().for_each(|expr| Self::walk(expr, vars))
             }
+
+            Expression::If { condition, then, else_ } => {
+                Self::walk(condition, vars);
+                Self::walk(then, vars);
+                Self::walk(else_, vars);
+            },
         }
     }
 }
