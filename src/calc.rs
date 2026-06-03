@@ -1,6 +1,6 @@
-use crate::expression::{ExprKind, Expression};
+// use crate::expression::{ExprKind, Expression};
 use crate::lexer::Lexer;
-use crate::resolver::resolver;
+use crate::resolver::resolve;
 use crate::user_function::UserFunction;
 
 use std::collections::HashMap;
@@ -43,7 +43,7 @@ impl Calculator {
             }
 
             ExprKind::Assign(name, mut expr) => {
-                resolver(&mut expr, &self.variables, &self.funcs, 0)?;
+                resolve(&mut expr, &self.variables, &self.funcs, 0)?;
 
                 let ans = expr.eval(&self.variables, &self.funcs)?;
                 self.set_variable(&name, ans);
@@ -52,7 +52,7 @@ impl Calculator {
             }
 
             ExprKind::Eval(mut expr) => {
-                resolver(&mut expr, &self.variables, &self.funcs, 0)?;
+                resolve(&mut expr, &self.variables, &self.funcs, 0)?;
 
                 expr.eval(&self.variables, &self.funcs)?
             }
