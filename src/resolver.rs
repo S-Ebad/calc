@@ -1,7 +1,10 @@
-use crate::rawexpr::join;
-use crate::{expr::Expr, operator::Operator, rawexpr::RawExpr, user_function::UserFunction};
-use std::collections::HashMap;
+use crate::{
+    expr::Expr, function::Function, operator::Operator, raw_expr::RawExpr,
+    user_function::UserFunction,
+};
+use std::{borrow::Borrow, collections::HashMap, hash::Hash};
 
+#[macro_export]
 macro_rules! err_fmt {
     ($fmt:expr, $($arg:expr),* $(,)?) => {
         Err(format!($fmt, $($arg),*))
@@ -18,202 +21,157 @@ macro_rules! err_ident {
     }};
 }
 
-pub fn resolve(
-    expr: RawExpr,
-    vars: &HashMap<String, f64>,
-    funcs: &HashMap<String, UserFunction>,
-) -> Result<Expr, String> {
+pub fn is_constant(name: &str) -> Option<f64> {
+    match name {
+        "pi" => Some(std::f64::consts::PI),
+        "e" => Some(std::f64::consts::E),
+        "inf" => Some(f64::INFINITY),
+        "true" => Some(1.0),
+        "false" => Some(0.0),
 
-    let expr = match expr {
-        RawExpr::Number(n) => Expr::Number(n),
-        RawExpr::Constant(constant) => Expr::Number(constant.get_number()),
-        RawExpr::Binary { op, lhs, rhs } => {
-            let lhs = resolve(*lhs, vars, funcs)?;
-            let rhs = resolve(*rhs, vars, funcs)?;
+        _ => None,
+    }
+}
 
-            Expr::Binary {
-                op,
-                lhs: Box::new(lhs),
-                rhs: Box::new(rhs),
-            }
-        }
-        RawExpr::Unary { op, expr } => {
-            let expr = resolve(*expr, vars, funcs)?;
-
-            Expr::Unary {
-                op,
-                expr: Box::new(expr),
-            }
-        }
-        RawExpr::Postfix { op, expr } => {
-            let expr = resolve(*expr, vars, funcs)?;
-
-            Expr::Postfix {
-                op,
-                expr: Box::new(expr),
-            }
-        }
-        RawExpr::Apply { name, mut args } => {
-            if let Some(var) = vars.get(&name) {
-                if args.len() != 1 {
-                    return err_fmt!(
-                        "Resolver Error: Cannot multiply {} by multiple expressions ({})",
-                        name,
-                        join(args.iter(), ", "),
-                    );
-                }
-
-                let arg = args.pop().unwrap();
-                let rhs = resolve(arg, vars, funcs)?;
-
-                let lhs = Expr::Number(*var);
+impl RawExpr {
+    pub fn resolve<K>(
+        self,
+        vars: &HashMap<K, f64>,
+        funcs: &HashMap<String, UserFunction>,
+    ) -> Result<Expr, String>
+    where
+        K: Borrow<str> + Hash + Eq,
+    {
+        let expr = match self {
+            RawExpr::Number(n) => Expr::Number(n),
+            RawExpr::Binary { op, lhs, rhs } => {
+                let lhs = lhs.resolve(vars, funcs)?;
+                let rhs = rhs.resolve(vars, funcs)?;
 
                 Expr::Binary {
-                    op: Operator::ImplicitMul,
+                    op,
                     lhs: Box::new(lhs),
                     rhs: Box::new(rhs),
                 }
-            } else if funcs.contains_key(&name) {
-                let resolved_args = args
+            }
+            RawExpr::Unary { op, expr } => {
+                let expr = expr.resolve(vars, funcs)?;
+
+                Expr::Unary {
+                    op,
+                    expr: Box::new(expr),
+                }
+            }
+            RawExpr::Postfix { op, expr } => {
+                let expr = expr.resolve(vars, funcs)?;
+
+                Expr::Postfix {
+                    op,
+                    expr: Box::new(expr),
+                }
+            }
+            RawExpr::Apply { name, mut args } => {
+                if let Some(var) = is_constant(&name).or(vars.get(&name).cloned()) {
+                    if args.len() != 1 {
+                        return err_fmt!(
+                            "Resolver Error: Cannot multiply {} by multiple expressions ({})",
+                            name,
+                            args.into_iter()
+                                .map(|x| x.to_string())
+                                .collect::<Vec<_>>()
+                                .join(", ")
+                        );
+                    }
+
+                    let arg = args.pop().unwrap();
+                    let rhs = arg.resolve(vars, funcs)?;
+
+                    let lhs = Expr::Number(var);
+
+                    Expr::Binary {
+                        op: Operator::ImplicitMul,
+                        lhs: Box::new(lhs),
+                        rhs: Box::new(rhs),
+                    }
+                } else if funcs.contains_key(&name) {
+                    let resolved_args = args
+                        .into_iter()
+                        .map(|raw_expr| raw_expr.resolve(vars, funcs))
+                        .collect::<Result<Vec<Expr>, _>>()?;
+
+                    Expr::UserCall {
+                        name,
+                        args: resolved_args,
+                    }
+                } else if let Some(func) = Function::from(&name) {
+                    let resolved_args = args
+                        .into_iter()
+                        .map(|raw_expr| raw_expr.resolve(vars, funcs))
+                        .collect::<Result<Vec<_>, _>>()?;
+
+                    Expr::Call {
+                        func,
+                        args: resolved_args,
+                    }
+                } else {
+                    return err_fmt!("Resolver Error: Unknown function'{}'", name);
+                }
+            }
+
+            RawExpr::If {
+                condition,
+                then,
+                else_,
+            } => {
+                let condition = condition.resolve(vars, funcs)?;
+                let then = then.resolve(vars, funcs)?;
+                let else_ = else_.resolve(vars, funcs)?;
+
+                Expr::If {
+                    condition: Box::new(condition),
+                    then: Box::new(then),
+                    else_: Box::new(else_),
+                }
+            }
+            RawExpr::Identifier(ident) => {
+                if let Some(var) = vars.get(&ident).cloned().or(is_constant(&ident)) {
+                    Expr::Number(var)
+                } else {
+                    return err_ident!(ident);
+                }
+            }
+            RawExpr::Call { func, args } => Expr::Call {
+                func,
+                args: args
                     .into_iter()
-                    .map(|raw_expr| resolve(raw_expr, vars, funcs))
-                    .collect::<Result<Vec<Expr>, _>>()?;
+                    .map(|raw_expr| raw_expr.resolve(vars, funcs))
+                    .collect::<Result<Vec<Expr>, _>>()?,
+            },
+
+            RawExpr::UserCall { name, args } => {
+                // arity mismatch
+                let func = funcs.get(&name).unwrap();
+                let func_params = func.params();
+
+                if func_params.len() != args.len() {
+                    return err_fmt!(
+                        "Resolver Error: Function {} takes {} argument(s) but got {}",
+                        func,
+                        func_params.len(),
+                        args.len()
+                    );
+                }
 
                 Expr::UserCall {
-                    func: name,
-                    args: resolved_args,
+                    name,
+                    args: args
+                        .into_iter()
+                        .map(|raw_expr| raw_expr.resolve(vars, funcs))
+                        .collect::<Result<Vec<Expr>, _>>()?,
                 }
-            } else {
-                return err_fmt!("Resolver Error: Unknown identifier '{}'", name);
             }
-        }
+        };
 
-        RawExpr::If {
-            condition,
-            then,
-            else_,
-        } => {
-            let condition = resolve(*condition, vars, funcs)?;
-            let then = resolve(*then, vars, funcs)?;
-            let else_ = resolve(*else_, vars, funcs)?;
-
-            Expr::If {
-                condition: Box::new(condition),
-                then: Box::new(then),
-                else_: Box::new(else_),
-            }
-        }
-        RawExpr::Identifier(ident) => {
-            if let Some(var) = vars.get(&ident) {
-                Expr::Number(*var)
-            } else {
-                return err_ident!(ident);
-            }
-        }
-    };
-
-    Ok(expr)
+        Ok(expr)
+    }
 }
-
-/*
-match expr {
-    Expression::Binary { op: _, lhs, rhs } => {
-        resolver(lhs, vars, funcs, depth + 1)?;
-        resolver(rhs, vars, funcs, depth + 1)?;
-    }
-    Expression::Unary { op: _, expr } | Expression::Postfix { expr, op: _ } => {
-        resolver(expr, vars, funcs, depth + 1)?;
-    }
-
-    Expression::Call { func: _, args } => {
-        args.iter_mut()
-            .try_for_each(|x| resolver(x, vars, funcs, depth + 1))?;
-    }
-
-    Expression::Constant(cons) => {
-        *expr = Expression::Number(cons.get_number());
-    }
-
-    // Expression::UserCall { func, args } => {
-    //     let args = args
-    //         .iter_mut()
-    //         .map(|expr| {
-    //             resolver(expr, vars, funcs, depth + 1)?;
-    //
-    //             expr.eval()
-    //         })
-    //         .collect::<Result<Vec<f64>, _>>()?;
-    //
-    //     let func_def = funcs
-    //         .get(func)
-    //         .ok_or_else(|| format!())?;
-    //
-    //     let body = func_def.clone().inline(&args)?;
-    //
-    //     *expr = *body;
-    //     resolver(expr, vars, funcs, depth + 1)?;
-    // }
-
-    // check if its a variable
-    Expression::Identifier(ident) => {
-        // variable
-        if let Some(&var) = vars.get(ident) {
-            *expr = Expression::Number(var);
-        } else {
-            return err_ident!(ident);
-        }
-    }
-
-    // check if its a variable implicit mul
-    Expression::Apply { identifier, args } => {
-        if let Some(&var) = vars.get(identifier) {
-            if args.len() != 1 {
-                return Err(format!(
-                    "Invalid Application: Cannot multiply {} by multiple expressions ({})",
-                    identifier,
-                    args.iter_mut()
-                        .map(|a| format!("{}", a))
-                        .collect::<Vec<_>>()
-                        .join(", ")
-                ));
-            }
-
-            let mut rhs = args.pop().unwrap();
-            resolver(&mut rhs, vars, funcs, depth + 1)?;
-
-            let lhs = Expression::Number(var);
-
-            *expr = Expression::Binary {
-                op: Operator::Mul,
-                lhs: Box::new(lhs),
-                rhs: Box::new(rhs),
-            };
-        } else if let Some(func_def) = funcs.get(identifier) {
-            *expr = Expression::UserCall {
-                func: func_def.name.clone(),
-                args: args.clone(),
-            };
-
-        } else {
-            return Err(format!(
-                "Invalid Identifier: unknown function or identifier '{}'",
-                identifier
-            ));
-        }
-    }
-
-    Expression::If {
-        condition,
-        then,
-        else_,
-    } => {
-        resolver(condition, vars, funcs, depth + 1)?;
-        resolver(then, vars, funcs, depth + 1)?;
-        resolver(else_, vars, funcs, depth + 1)?;
-    }
-
-    _ => (),
-};
-*/
-
-// Ok(())

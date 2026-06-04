@@ -23,8 +23,9 @@ fn main() {
         }
 
         match calculator.solve(&input) {
-            Ok(ans) => println!("= {}", ans),
+            Ok(Some(ans)) => println!("= {}", ans),
             Err(err) => eprintln!("Error: {}", err),
+            Ok(None) => (), // for function definitions.
         }
 
         println!();

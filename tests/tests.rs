@@ -2,7 +2,7 @@ use calc::calc::Calculator;
 
 // helpers
 fn solve(expr: &str) -> f64 {
-    Calculator::new().solve(expr).expect(expr)
+    Calculator::new().solve(expr).expect(expr).expect("Doesn't return anything")
 }
 
 fn solve_is_err(expr: &str) -> bool {
@@ -292,9 +292,9 @@ mod variable_tests {
     fn assignment() {
         let mut calc = Calculator::new();
         calc.solve("x = 5").unwrap();
-        assert_eq!(calc.solve("x + 3").unwrap(), 8.0);
-        assert_eq!(calc.solve("x * 2").unwrap(), 10.0);
-        assert_eq!(calc.solve("x ^ 2").unwrap(), 25.0);
+        assert_eq!(calc.solve("x + 3").unwrap().unwrap(), 8.0);
+        assert_eq!(calc.solve("x * 2").unwrap().unwrap(), 10.0);
+        assert_eq!(calc.solve("x ^ 2").unwrap().unwrap(), 25.0);
     }
 
     #[test]
@@ -302,8 +302,8 @@ mod variable_tests {
         let mut calc = Calculator::new();
         calc.solve("a = 3").unwrap();
         calc.solve("b = 4").unwrap();
-        assert_eq!(calc.solve("a + b").unwrap(), 7.0);
-        assert_eq!(calc.solve("a * b").unwrap(), 12.0);
+        assert_eq!(calc.solve("a + b").unwrap().unwrap(), 7.0);
+        assert_eq!(calc.solve("a * b").unwrap().unwrap(), 12.0);
     }
 
     #[test]
@@ -311,24 +311,24 @@ mod variable_tests {
         let mut calc = Calculator::new();
         calc.solve("x = 5").unwrap();
         calc.solve("x = 10").unwrap();
-        assert_eq!(calc.solve("x").unwrap(), 10.0);
+        assert_eq!(calc.solve("x").unwrap().unwrap(), 10.0);
     }
 
     #[test]
     fn ans_updates() {
         let mut calc = Calculator::new();
         calc.solve("10 + 5").unwrap();
-        assert_eq!(calc.solve("ans").unwrap(), 15.0);
+        assert_eq!(calc.solve("ans").unwrap().unwrap(), 15.0);
         calc.solve("3 * 3").unwrap();
-        assert_eq!(calc.solve("ans").unwrap(), 9.0);
+        assert_eq!(calc.solve("ans").unwrap().unwrap(), 9.0);
     }
 
     #[test]
     fn ans_chaining() {
         let mut calc = Calculator::new();
         calc.solve("10").unwrap();
-        assert_eq!(calc.solve("ans * 2").unwrap(), 20.0);
-        assert_eq!(calc.solve("ans + 5").unwrap(), 25.0);
+        assert_eq!(calc.solve("ans * 2").unwrap().unwrap(), 20.0);
+        assert_eq!(calc.solve("ans + 5").unwrap().unwrap(), 25.0);
     }
 
     #[test]
@@ -338,9 +338,9 @@ mod variable_tests {
 
     #[test]
     fn unknown_variable_error() {
-        assert!(solve_err("foo").contains("Invalid Identifier"));
-        assert!(solve_err("bar").contains("Invalid Identifier"));
-        assert!(solve_err("xyz").contains("Invalid Identifier"));
+        assert!(solve_err("foo").contains("Unknown identifier"));
+        assert!(solve_err("bar").contains("Unknown identifier"));
+        assert!(solve_err("xyz").contains("Unknown identifier"));
     }
 
     #[test]
@@ -348,18 +348,18 @@ mod variable_tests {
         let mut calc = Calculator::new();
         calc.solve("x = 3").unwrap();
         calc.solve("y = 4").unwrap();
-        assert_eq!(round(calc.solve("sqrt(x^2 + y^2)").unwrap()), 5.0); // pythagorean
-        assert_eq!(calc.solve("2x + 3y").unwrap(), 18.0); // implicit mul with vars
-        assert_eq!(calc.solve("(x + y) ^ 2").unwrap(), 49.0);
+        assert_eq!(round(calc.solve("sqrt(x^2 + y^2)").unwrap().unwrap()), 5.0); // pythagorean
+        assert_eq!(calc.solve("2x + 3y").unwrap().unwrap(), 18.0); // implicit mul with vars
+        assert_eq!(calc.solve("(x + y) ^ 2").unwrap().unwrap(), 49.0);
     }
 
     #[test]
     fn variable_reassign_affects_expr() {
         let mut calc = Calculator::new();
         calc.solve("x = 2").unwrap();
-        assert_eq!(calc.solve("x ^ 3").unwrap(), 8.0);
+        assert_eq!(calc.solve("x ^ 3").unwrap().unwrap(), 8.0);
         calc.solve("x = 3").unwrap();
-        assert_eq!(calc.solve("x ^ 3").unwrap(), 27.0);
+        assert_eq!(calc.solve("x ^ 3").unwrap().unwrap(), 27.0);
     }
 
     #[test]
@@ -367,7 +367,7 @@ mod variable_tests {
         let mut calc = Calculator::new();
         calc.solve("10").unwrap();
         let _ = calc.solve("1 / 0"); // error shouldn't wipe ans
-        assert_eq!(calc.solve("ans").unwrap(), 10.0);
+        assert_eq!(calc.solve("ans").unwrap().unwrap(), 10.0);
     }
 }
 
@@ -669,8 +669,8 @@ mod error_tests {
 
     #[test]
     fn mismatched_open() {
-        assert!(solve_err("(1 + 2").contains("missing closing parentheses"));
-        assert!(solve_err("((3 + 4)").contains("missing closing parentheses"));
+        assert!(solve_err("(1 + 2").contains("Missing closing parenthesis"));
+        assert!(solve_err("((3 + 4)").contains("Missing closing parenthesis"));
     }
 
     #[test]
@@ -681,7 +681,7 @@ mod error_tests {
 
     #[test]
     fn empty_expr() {
-        assert!(solve_err("").contains("no expression"));
+        assert!(solve_err("").contains("No expression"));
     }
 
     #[test]
@@ -693,8 +693,8 @@ mod error_tests {
 
     #[test]
     fn missing_operator() {
-        assert!(solve_err("1 2").contains("missing operator"));
-        assert!(solve_err("3 4 5").contains("missing operator"));
+        assert!(solve_err("1 2").contains("Missing operator"));
+        assert!(solve_err("3 4 5").contains("Missing operator"));
     }
 
     #[test]
@@ -785,7 +785,7 @@ mod validation_tests {
         // this is fine with variables though
         calc.solve("x = 10").unwrap();
         calc.solve("f(x) = 10x").unwrap();
-        assert_eq!(calc.solve("f(2)").unwrap(), 20.0);
+        assert_eq!(calc.solve("f(2)").unwrap().unwrap(), 20.0);
     }
 }
 
@@ -798,7 +798,7 @@ mod user_function_tests {
         // Area of a cylinder: 2*pi*r*h + 2*pi*r^2
         calc.solve("cylinder_area(r, h) = 2pi*r*h + 2pi*r^2")
             .unwrap();
-        let result = calc.solve("cylinder_area(3, 5)").unwrap();
+        let result = calc.solve("cylinder_area(3, 5)").unwrap().unwrap();
         let expected = round(
             2.0 * std::f64::consts::PI * 3.0 * 5.0 + 2.0 * std::f64::consts::PI * f64::powi(3.0, 2),
         );
@@ -809,11 +809,11 @@ mod user_function_tests {
     fn function_redefinition() {
         let mut calc = Calculator::new();
         calc.solve("f(x) = x + 1").unwrap();
-        assert_eq!(calc.solve("f(5)").unwrap(), 6.0);
+        assert_eq!(calc.solve("f(5)").unwrap().unwrap(), 6.0);
 
         // Redefine f(x)
         calc.solve("f(x) = x * 2").unwrap();
-        assert_eq!(calc.solve("f(5)").unwrap(), 10.0);
+        assert_eq!(calc.solve("f(5)").unwrap().unwrap(), 10.0);
     }
 
     #[test]
@@ -822,7 +822,7 @@ mod user_function_tests {
         calc.solve("square(x) = x * x").unwrap();
         calc.solve("double(x) = x + x").unwrap();
         // double(square(3)) = (3*3) + (3*3) = 18
-        assert_eq!(calc.solve("double(square(3))").unwrap(), 18.0);
+        assert_eq!(calc.solve("double(square(3))").unwrap().unwrap(), 18.0);
     }
 
     #[test]
@@ -830,11 +830,11 @@ mod user_function_tests {
         let mut calc = Calculator::new();
         calc.solve("k = 2").unwrap();
         calc.solve("f(x) = k * x").unwrap();
-        assert_eq!(calc.solve("f(10)").unwrap(), 20.0);
+        assert_eq!(calc.solve("f(10)").unwrap().unwrap(), 20.0);
 
         // Changing k should change the result of the function call
         calc.solve("k = 5").unwrap();
-        assert_eq!(calc.solve("f(10)").unwrap(), 50.0);
+        assert_eq!(calc.solve("f(10)").unwrap().unwrap(), 50.0);
     }
 
     #[test]
@@ -858,8 +858,8 @@ mod user_function_tests {
         let mut calc = Calculator::new();
         calc.solve("f(x) = 2x").unwrap();
 
-        assert_eq!(calc.solve("f5").unwrap(), 10.0);
-        assert_eq!(calc.solve("2f5").unwrap(), 20.0);
+        assert_eq!(calc.solve("f5").unwrap().unwrap(), 10.0);
+        assert_eq!(calc.solve("2f5").unwrap().unwrap(), 20.0);
     }
 
     #[test]
@@ -868,6 +868,6 @@ mod user_function_tests {
         calc.solve("f(x) = 10x").unwrap();
         calc.solve("g(x) = 20x").unwrap();
 
-        assert_eq!(calc.solve("f(g(10))").unwrap(), 2000.0);
+        assert_eq!(calc.solve("f(g(10))").unwrap().unwrap(), 2000.0);
     }
 }

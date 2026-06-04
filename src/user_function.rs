@@ -1,30 +1,40 @@
 use std::fmt;
 
-use crate::expression::Expression;
+use crate::{err_fmt, raw_expr::RawExpr};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct UserFunction {
-    pub name: String,
-    pub params: Vec<String>, // guranteed to be [Identifier, ...]
-    pub body: Box<Expression>,
+    name: String,
+    params: Vec<String>,
+    body: Box<RawExpr>,
 }
 
 impl UserFunction {
-    pub fn new(name: String, params: Vec<Expression>, body: Box<Expression>) -> Self {
-        Self { name, params, body }
+    pub fn new(name: String, params: Vec<RawExpr>, body: Box<RawExpr>) -> Result<Self, String> {
+        let params = params
+            .into_iter()
+            .map(|param| match param {
+                RawExpr::Identifier(name) => Ok(name),
+                other => err_fmt!(
+                    "Invalid Function Definition: paramter must be an identifier, got: '{}'",
+                    other
+                ),
+            })
+            .collect::<Result<Vec<String>, _>>()?;
+
+        Ok(Self { name, params, body })
     }
 
-    pub fn is_valid(&self) -> Result<(), String> {
-        self.params
-            .iter()
-            .find(|param| !matches!(param, Expression::Identifier(_)))
-            .map(|param| {
-                Err(format!(
-                    "Invalid Function Definition: parameter must be an identifier, got '{}'",
-                    param
-                ))
-            })
-            .unwrap_or(Ok(()))
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    pub fn params(&self) -> &[String] {
+        &self.params
+    }
+
+    pub fn body(&self) -> &RawExpr {
+        &self.body
     }
 }
 

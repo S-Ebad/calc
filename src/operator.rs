@@ -54,13 +54,9 @@ impl Operator {
     // get operator from char. last_token is needed for Unary
     pub fn from(c: char, iter: &mut Peekable<Chars>) -> Result<Self, String> {
         match c {
-            '&' if is_next_token(iter, Some(&'&')) => {
-                Ok(Operator::And)
-            }
+            '&' if is_next_token(iter, Some(&'&')) => Ok(Operator::And),
 
-            '|' if is_next_token(iter, Some(&'|')) => {
-                Ok(Operator::Or)
-            }
+            '|' if is_next_token(iter, Some(&'|')) => Ok(Operator::Or),
 
             '=' => {
                 if is_next_token(iter, Some(&'=')) {

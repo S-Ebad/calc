@@ -1,6 +1,5 @@
 use std::{iter::Peekable, str::Chars};
 
-use crate::constant::Constant;
 use crate::{function::Function, operator::Operator};
 
 #[derive(Debug, PartialEq, Clone)]
@@ -9,7 +8,6 @@ pub enum Token {
     Number(f64),
     Identifier(String), // a word is an identifier before being a function/constant/variable
     Function(Function),
-    Constant(Constant),
     Comma,
     LParen,
     RParen,

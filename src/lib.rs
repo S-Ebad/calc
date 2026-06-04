@@ -1,10 +1,8 @@
 pub mod calc;
-pub mod constant;
 pub mod function;
-pub mod eval;
 pub mod lexer;
 pub mod operator;
-pub mod rawexpr;
+pub mod raw_expr;
 pub mod expr;
 pub mod resolver;
 pub mod user_function;
