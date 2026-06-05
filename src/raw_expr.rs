@@ -88,20 +88,27 @@ fn nud(lexer: &mut Lexer, funcs: &HashMap<String, UserFunction>) -> Result<RawEx
     let expr = match lexer.next() {
         Some(Token::Number(num)) => RawExpr::Number(num),
         Some(Token::Identifier(name)) => {
-            if let Some(func) = Function::from(&name) {
-                let args = consume_args(lexer, funcs)?;
+            let is_func = Function::from(&name).is_some()
+                || funcs.contains_key(&name)
+                || lexer.peek() == Some(&Token::LParen);
 
-                RawExpr::Call { func, args }
-            } else if funcs.contains_key(&name) {
-                let args = consume_args(lexer, funcs)?;
-
-                RawExpr::UserCall { name, args }
-            } else if lexer.peek() == Some(&Token::LParen) {
-                let args = consume_args(lexer, funcs)?;
-
-                RawExpr::Apply { name, args }
-            } else {
+            if !is_func {
                 RawExpr::Identifier(name)
+            } else {
+
+                if matches!(lexer.peek(), Some(Token::Comma | Token::RParen)) {
+                    return err_fmt!("Parse Error: '{}' is a function, not a value", name);
+                }
+
+                let args = consume_args(lexer, funcs)?;
+
+                if let Some(func) = Function::from(&name) {
+                    RawExpr::Call { func, args }
+                } else if funcs.contains_key(&name) {
+                    RawExpr::UserCall { name, args }
+                } else {
+                    RawExpr::Apply { name, args }
+                }
             }
         }
 

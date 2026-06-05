@@ -8,8 +8,8 @@ use std::collections::HashMap;
 const PRECISION: f64 = 1e10;
 
 pub struct Calculator {
-    pub variables: HashMap<String, f64>,
-    pub funcs: HashMap<String, UserFunction>,
+    variables: HashMap<String, f64>,
+    funcs: HashMap<String, UserFunction>,
 }
 
 enum ExprKind {
