@@ -1,5 +1,7 @@
 use std::{f64, fmt};
 
+use crate::err_fmt;
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Function {
     // 1-arg functions
@@ -103,12 +105,12 @@ impl Function {
                 format!("{}-{}", min, max)
             };
 
-            return Err(format!(
+            return err_fmt!(
                 "Eval Error: function {} takes {} argument(s) but got {}",
                 self,
                 arity_str,
                 args.len()
-            ));
+            );
         }
 
         let result = match self {
@@ -129,10 +131,11 @@ impl Function {
                 let max = args[2];
 
                 if min > max {
-                    return Err(format!(
+                    return err_fmt!(
                         "Eval Error: clamp range min ({}) must be less than max ({})",
-                        min, max
-                    ));
+                        min,
+                        max
+                    );
                 }
 
                 x.clamp(min, max)
@@ -145,10 +148,10 @@ impl Function {
                 if (args[0] - normalized * f64::consts::FRAC_PI_2).abs() < f64::EPSILON
                     && normalized as i64 % 2 != 0
                 {
-                    return Err(format!(
+                    return err_fmt!(
                         "Eval Error: function tan({}) is undefined at asymptote (pi / 2 + n * pi)",
                         args[0]
-                    ));
+                    );
                 }
 
                 args[0].tan()
@@ -172,10 +175,10 @@ impl Function {
                 let x = args[0];
 
                 if root == 0f64 {
-                    return Err(format!(
-                        "Eval Error: sqrt({0}, 0) is undefined (division by zero: {0} ^ (1/0))",
+                    return err_fmt!(
+                        "Eval Error: sqrt({0}, 0) is undefined (division by zero: {0} ^ (1/0)",
                         x
-                    ));
+                    );
                 }
 
                 if x < 0.0 && root.fract() == 0.0 && (root as i64) % 2 != 0 {
@@ -196,12 +199,12 @@ impl Function {
 
             F::Pow => {
                 if args[0] == 0f64 && args[1] < 0f64 {
-                    return Err(format!(
+                    return err_fmt!(
                         "Eval Error: pow({0}, {1}) is undefined (division by zero: 1/{0}^{2})",
                         args[0],
                         args[1],
                         args[1].abs()
-                    ));
+                    );
                 }
 
                 args[0].powf(args[1])
@@ -211,14 +214,14 @@ impl Function {
         };
 
         if result.is_nan() {
-            return Err(format!(
+            return err_fmt!(
                 "Eval Error: {}({}) is undefined",
                 self,
                 args.iter()
                     .map(|x| x.to_string())
                     .collect::<Vec<String>>()
                     .join(", ")
-            ));
+            );
         }
 
         Ok(result)

@@ -1,5 +1,7 @@
 use std::{iter::Peekable, str::Chars};
 
+use crate::err_fmt;
+
 macro_rules! to_bool {
     ($b:expr) => {
         ($b as u8) as f64
@@ -96,7 +98,7 @@ impl Operator {
             '*' => Ok(Operator::Mul),
             '^' => Ok(Operator::Pow),
             '%' => Ok(Operator::Mod),
-            _ => Err(format!("Lexer Error: invalid operator '{}'", c)),
+            _ => err_fmt!("Lexer Error: invalid operator '{}'", c),
         }
     }
 
@@ -151,10 +153,7 @@ impl Operator {
             OP::Neg => Ok(-num1),
             OP::Fac => factorial(num1),
 
-            _ => Err(format!(
-                "Eval Error: {} is not a postfix/prefix operator",
-                self
-            )),
+            _ => err_fmt!("Eval Error: {} is not a postfix/prefix operator", self),
         }
     }
 
@@ -173,10 +172,11 @@ impl Operator {
 
             OP::Div => {
                 if num2 == 0f64 {
-                    return Err(format!(
+                    return err_fmt!(
                         "Eval Error: {}/{} is undefined (division by zero)",
-                        num1, num2
-                    ));
+                        num1,
+                        num2
+                    );
                 }
 
                 num1 / num2
@@ -185,12 +185,12 @@ impl Operator {
             OP::Pow => {
                 // num1 ^ -num2 where num1 is 0 is undefined
                 if num1 == 0f64 && num2 < 0f64 {
-                    return Err(format!(
+                    return err_fmt!(
                         "Eval Error: {0}^{1} is undefined (division by zero: 1/{0}^{2})",
                         num1,
                         num2,
                         num2.abs()
-                    ));
+                    );
                 }
 
                 f64::powf(num1, num2)
@@ -206,16 +206,16 @@ impl Operator {
             OP::And => to_bool!(is_true!(num1) && is_true!(num2)),
             OP::Or => to_bool!(is_true!(num1) || is_true!(num2)),
 
-
-            OP::Equal => return Err("Eval Error: '=' can only be used at the top level for assignment".to_string()),
-            _ => unreachable!()
+            OP::Equal => {
+                return Err(
+                    "Eval Error: '=' can only be used at the top level for assignment".to_string(),
+                );
+            }
+            _ => unreachable!(),
         };
 
         if result.is_nan() {
-            return Err(format!(
-                "Eval Error: {} {} {} is undefined",
-                num1, self, num2
-            ));
+            return err_fmt!("Eval Error: {} {} {} is undefined", num1, self, num2);
         }
 
         Ok(result)
@@ -254,11 +254,11 @@ impl std::fmt::Display for Operator {
 
 fn factorial(n: f64) -> Result<f64, String> {
     if n < 0.0 || n.fract() != 0.0 {
-        return Err(format!("Eval Error: factorial is undefined for {}", n));
+        return err_fmt!("Eval Error: factorial is undefined for {}", n);
     }
 
     if n > 170.0 {
-        return Err(format!("Eval Error: {}! is too large (max is 170!)", n));
+        return err_fmt!("Eval Error: {}! is too large (max is 170!)", n);
     }
 
     Ok((1..=n as u64).map(|x| x as f64).product())

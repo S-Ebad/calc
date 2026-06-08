@@ -1,6 +1,6 @@
 use std::{iter::Peekable, str::Chars, fmt};
 
-use crate::{function::Function, operator::Operator};
+use crate::{err_fmt, function::Function, operator::Operator};
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum Token {
@@ -94,7 +94,7 @@ impl Token {
             '?' => Ok(Token::QuestionMark),
             ':' => Ok(Token::Colon),
 
-            _ => Err(format!("Lexer Error: invalid token '{}'", c)),
+            _ => err_fmt!("Lexer Error: invalid token '{}'", c),
         };
 
         iter.next();
