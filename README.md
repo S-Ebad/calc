@@ -1,6 +1,6 @@
 # calc
 
-Calc is a high-performance mathematical evaluation engine and REPL implemented in Rust. It leverages a Pratt Parser for complex operator precedence and a recursive-descent resolver to support dynamic variables, user-defined functions, and sophisticated constant inlining
+Calc is a mathematical evaluation engine and REPL implemented in Rust. It uses a Pratt parser for operator precedence and a two-stage AST pipeline to support dynamic variables, user-defined functions, and recursive expressions.
 
 ## Installation
 
@@ -28,6 +28,11 @@ cargo run --release
 
 > sin(pi / 2)
 = 1
+
+> fib(x) = x > 1 ? fib(x - 1) + fib(x - 2) : x
+
+> fib(6)
+= 8
 ```
 
 ## Docs
@@ -37,8 +42,8 @@ cargo run --release
 
 ## Pipeline
 
-Input goes through four stages: 
-* **lexing** (raw string -> tokens)
-* **parsing** (tokens -> AST via a Pratt parser)
-* **resolving** (identifiers, constants, and user functions are substituted into the tree)
-*  **evaluation** (the tree is walked and reduced to a number).
+Input goes through four stages:
+* **Lexing** — raw string to tokens
+* **Parsing** — tokens to unresolved AST (`RawExpr`) via a Pratt parser
+* **Resolving** — `RawExpr` to resolved AST (`Expr`); identifiers, constants, and functions are looked up and validated
+* **Evaluation** — `Expr` is consumed and reduced to an `f64`
