@@ -31,6 +31,12 @@ impl Calculator {
     }
 
     pub fn set_variable(&mut self, name: &str, value: f64) {
+        // dynamic scoping screws with the cache because the variable could be in a function
+        // then the cached result would actually be wrong
+        if name != "ans" {
+            self.cache.clear();
+        }
+
         self.vars.insert(name.to_string(), value);
     }
 
