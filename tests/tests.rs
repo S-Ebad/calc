@@ -214,14 +214,15 @@ mod postfix {
 
     #[test]
     fn factorial_negative_is_error() {
-        assert!(solve_err("(-1)!").contains("factorial undefined"));
-        assert!(solve_err("(-5)!").contains("factorial undefined"));
+        println!("{}", solve_err("(-1)!"));
+        assert!(solve_err("(-1)!").contains("factorial is undefined"));
+        assert!(solve_err("(-5)!").contains("factorial is undefined"));
     }
 
     #[test]
     fn factorial_non_integer_is_error() {
-        assert!(solve_err("2.5!").contains("factorial undefined"));
-        assert!(solve_err("0.1!").contains("factorial undefined"));
+        assert!(solve_err("2.5!").contains("factorial is undefined"));
+        assert!(solve_err("0.1!").contains("factorial is undefined"));
     }
 
     #[test]
@@ -265,7 +266,7 @@ mod constants_tests {
     fn scientific_notation_vs_euler() {
         assert_eq!(solve("9e"), round(9.0 * std::f64::consts::E));
         assert_eq!(solve("9e2"), 900.0);
-        assert!(solve_err("9e9e9").contains("Invalid number"));
+        assert!(solve_err("9e9e9").contains("invalid number"));
     }
 
     #[test]
@@ -294,7 +295,7 @@ mod constants_tests {
         assert_eq!(solve("inf + 1"), f64::INFINITY);
         assert_eq!(solve("inf * 2"), f64::INFINITY);
         assert_eq!(solve("-inf - 1"), f64::NEG_INFINITY);
-        assert!(solve_err("inf - inf").contains("NaN"));
+        assert!(solve_err("inf - inf").contains("undefined"));
     }
 }
 
@@ -351,9 +352,9 @@ mod variable_tests {
 
     #[test]
     fn unknown_variable_error() {
-        assert!(solve_err("foo").contains("Unknown identifier"));
-        assert!(solve_err("bar").contains("Unknown identifier"));
-        assert!(solve_err("xyz").contains("Unknown identifier"));
+        assert!(solve_err("foo").contains("unknown identifier"));
+        assert!(solve_err("bar").contains("unknown identifier"));
+        assert!(solve_err("xyz").contains("unknown identifier"));
     }
 
     #[test]
@@ -683,32 +684,32 @@ mod error_tests {
 
     #[test]
     fn mismatched_open() {
-        assert!(solve_err("(1 + 2").contains("Missing closing parenthesis"));
-        assert!(solve_err("((3 + 4)").contains("Missing closing parenthesis"));
+        assert!(solve_err("(1 + 2").contains("missing closing parenthesis"));
+        assert!(solve_err("((3 + 4)").contains("missing closing parenthesis"));
     }
 
     #[test]
     fn mismatched_close() {
-        assert!(solve_err("1 + 2)").contains("Unexpected closing parenthesis"));
-        assert!(solve_err("(1 + 2))").contains("Unexpected closing parenthesis"));
+        assert!(solve_err("1 + 2)").contains("unexpected closing parenthesis"));
+        assert!(solve_err("(1 + 2))").contains("unexpected closing parenthesis"));
     }
 
     #[test]
     fn empty_expr() {
-        assert!(solve_err("").contains("No expression"));
+        assert!(solve_err("").contains("no expression"));
     }
 
     #[test]
     fn invalid_token() {
-        assert!(solve_err("1 @ 2").contains("Invalid token"));
-        assert!(solve_err("1 # 2").contains("Invalid token"));
-        assert!(solve_err("1 $ 2").contains("Invalid token"));
+        assert!(solve_err("1 @ 2").contains("invalid token"));
+        assert!(solve_err("1 # 2").contains("invalid token"));
+        assert!(solve_err("1 $ 2").contains("invalid token"));
     }
 
     #[test]
     fn missing_operator() {
-        assert!(solve_err("1 2").contains("Missing operator"));
-        assert!(solve_err("3 4 5").contains("Missing operator"));
+        assert!(solve_err("1 2").contains("missing operator"));
+        assert!(solve_err("3 4 5").contains("missing operator"));
     }
 
     #[test]
