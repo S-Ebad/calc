@@ -96,7 +96,7 @@ impl Operator {
             '*' => Ok(Operator::Mul),
             '^' => Ok(Operator::Pow),
             '%' => Ok(Operator::Mod),
-            _ => Err(format!("Invalid Operator: {}", c)),
+            _ => Err(format!("Lexer Error: invalid operator '{}'", c)),
         }
     }
 
@@ -152,7 +152,7 @@ impl Operator {
             OP::Fac => factorial(num1),
 
             _ => Err(format!(
-                "Invalid Operator: {:?} is not a postfix/prefix operator",
+                "Eval Error: {} is not a postfix/prefix operator",
                 self
             )),
         }
@@ -174,7 +174,7 @@ impl Operator {
             OP::Div => {
                 if num2 == 0f64 {
                     return Err(format!(
-                        "Invalid Expression: division by zero ({}/{})",
+                        "Eval Error: {}/{} is undefined (division by zero)",
                         num1, num2
                     ));
                 }
@@ -186,7 +186,7 @@ impl Operator {
                 // num1 ^ -num2 where num1 is 0 is undefined
                 if num1 == 0f64 && num2 < 0f64 {
                     return Err(format!(
-                        "Invalid Expression: division by zero ({0}^{1} = 1/({0}^{2}) = 1 / {0})",
+                        "Eval Error: {0}^{1} is undefined (division by zero: 1/{0}^{2})",
                         num1,
                         num2,
                         num2.abs()
@@ -206,17 +206,14 @@ impl Operator {
             OP::And => to_bool!(is_true!(num1) && is_true!(num2)),
             OP::Or => to_bool!(is_true!(num1) || is_true!(num2)),
 
-            _ => {
-                return Err(format!(
-                    "Invalid Token: {:?} Must be handled during parser",
-                    self
-                ));
-            }
+
+            OP::Equal => return Err("Eval Error: '=' can only be used at the top level for assignment".to_string()),
+            _ => unreachable!()
         };
 
         if result.is_nan() {
             return Err(format!(
-                "Invalid Expression: {} {} {} is NaN",
+                "Eval Error: {} {} {} is undefined",
                 num1, self, num2
             ));
         }
@@ -257,11 +254,11 @@ impl std::fmt::Display for Operator {
 
 fn factorial(n: f64) -> Result<f64, String> {
     if n < 0.0 || n.fract() != 0.0 {
-        return Err(format!("Invalid Argument: factorial undefined for {}", n));
+        return Err(format!("Eval Error: factorial is undefined for {}", n));
     }
 
     if n > 170.0 {
-        return Err(format!("Invalid Argument: {}! is too large", n));
+        return Err(format!("Eval Error: {}! is too large (max is 170!)", n));
     }
 
     Ok((1..=n as u64).map(|x| x as f64).product())

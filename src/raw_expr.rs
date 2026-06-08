@@ -77,7 +77,7 @@ fn consume_args(
         }
 
         if !matches!(lexer.next(), Some(Token::RParen)) {
-            return Err("Invalid Expression: Missing closing parenthesis ')'".to_string());
+            return Err("Parse Error: missing closing parenthesis ')'".to_string());
         }
     }
 
@@ -116,7 +116,7 @@ fn nud(lexer: &mut Lexer, funcs: &HashMap<String, UserFunction>) -> Result<RawEx
             let lhs: RawExpr = parse_expression(lexer, 0, funcs)?;
 
             if lexer.next() != Some(Token::RParen) {
-                return Err("Parse Error: here: Missing closing parenthesis ')'".to_string());
+                return Err("Parse Error: missing closing parenthesis ')'".to_string());
             }
 
             lhs
@@ -138,8 +138,8 @@ fn nud(lexer: &mut Lexer, funcs: &HashMap<String, UserFunction>) -> Result<RawEx
             }
         }
 
-        Some(token) => return err_fmt!("Parse Error: '{:?}' Cannot start an expression", token),
-        None => return Err("Parse Error: Unexpected end of input".to_string()),
+        Some(token) => return err_fmt!("Parse Error: '{}' Cannot start an expression", token),
+        None => return Err("Parse Error: unexpected end of input".to_string()),
     };
 
     Ok(expr)
@@ -156,7 +156,7 @@ fn led(
 
         Some(token @ (Token::LParen | Token::Identifier(_) | Token::Number(_))) => {
             if matches!(token, &Token::Number(_)) && matches!(lhs, RawExpr::Number(_)) {
-                return Err("Parse Error: Missing operator between expression".to_string());
+                return Err("Parse Error: missing operator between expression".to_string());
             }
 
             let op = Operator::ImplicitMul;
@@ -175,7 +175,7 @@ fn led(
 
             let then = parse_expression(lexer, 0, funcs)?;
             if lexer.next() != Some(Token::Colon) {
-                return Err("Parse Error: Expected Colon ':' after '?' ".to_string());
+                return Err("Parse Error: expected Colon ':' after '?' ".to_string());
             }
 
             let else_ = parse_expression(lexer, 0, funcs)?;
@@ -238,14 +238,14 @@ impl RawExpr {
         funcs: &HashMap<String, UserFunction>,
     ) -> Result<RawExpr, String> {
         if lexer.is_empty() {
-            return Err("Parse Error: No expression to parse".to_string());
+            return Err("Parse Error: no expression to parse".to_string());
         }
 
         let expr = parse_expression(&mut lexer, 0, funcs)?;
 
         if let Some(token) = lexer.peek() {
             return Err(if matches!(token, Token::RParen) {
-                "Invalid Expression: unexpected closing parenthesis ')'".to_string()
+                "Parse Error: unexpected closing parenthesis ')'".to_string()
             } else {
                 format!("Parse Error: unexpected token: {:?}", token)
             });

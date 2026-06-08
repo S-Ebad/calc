@@ -1,4 +1,4 @@
-use std::{iter::Peekable, str::Chars};
+use std::{iter::Peekable, str::Chars, fmt};
 
 use crate::{function::Function, operator::Operator};
 
@@ -19,6 +19,24 @@ pub enum Token {
 #[derive(Debug)]
 pub struct Lexer {
     tokens: Vec<Token>,
+}
+
+impl fmt::Display for Token {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let name: &str = match self {
+            Token::Operator(operator) => &operator.to_string(),
+            Token::Number(n) => &n.to_string(),
+            Token::Identifier(name) => name,
+            Token::Function(func) => &func.to_string(),
+            Token::Comma => ",",
+            Token::LParen => "(",
+            Token::RParen => ")",
+            Token::QuestionMark => "?",
+            Token::Colon => ":",
+        };
+
+        write!(f, "{}", name)
+    }
 }
 
 impl Lexer {
@@ -76,7 +94,7 @@ impl Token {
             '?' => Ok(Token::QuestionMark),
             ':' => Ok(Token::Colon),
 
-            _ => Err(format!("Invalid Token: '{}'", c)),
+            _ => Err(format!("Lexer Error: invalid token '{}'", c)),
         };
 
         iter.next();
@@ -147,7 +165,7 @@ fn to_f64(iter: &mut Peekable<Chars>) -> Result<f64, String> {
 
     let result = num
         .parse::<f64>()
-        .map_err(|_| format!("Invalid Number: '{}'", num));
+        .map_err(|_| format!("Lexer Error: invalid number '{}'", num));
 
     if mul_euler {
         Ok(result? * std::f64::consts::E)

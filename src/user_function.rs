@@ -16,7 +16,7 @@ impl UserFunction {
             .map(|param| match param {
                 RawExpr::Identifier(name) => Ok(name),
                 other => err_fmt!(
-                    "Invalid Function Definition: paramter must be an identifier, got: '{}'",
+                    "Parse Error: function parameter must be an identifier, got '{}'",
                     other
                 ),
             })

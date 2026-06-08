@@ -68,7 +68,7 @@ impl Expr {
     {
 
         if depth >= 100 {
-            return Err("Evaluation Error: Recursion limit has been reached".to_string())
+            return Err("Eval Error: recursion limit has been reached".to_string())
         }
 
         match self {

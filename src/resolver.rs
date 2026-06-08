@@ -16,7 +16,7 @@ macro_rules! err_ident {
         if $ident == "ans" {
             Err("Resolver Error: ans not yet defined".to_string())
         } else {
-            err_fmt!("Resolver Error: Unknown identifier '{}'", $ident)
+            err_fmt!("Resolver Error: unknown identifier '{}'", $ident)
         }
     }};
 }
@@ -74,7 +74,7 @@ impl RawExpr {
                 if let Some(var) = is_constant(&name).or(vars.get(&name).cloned()) {
                     if args.len() != 1 {
                         return err_fmt!(
-                            "Resolver Error: Cannot multiply {} by multiple expressions ({})",
+                            "Resolver Error: cannot multiply {} by multiple expressions ({})",
                             name,
                             args.into_iter()
                                 .map(|x| x.to_string())
@@ -114,7 +114,7 @@ impl RawExpr {
                         args: resolved_args,
                     }
                 } else {
-                    return err_fmt!("Resolver Error: Unknown function'{}'", name);
+                    return err_fmt!("Resolver Error: unknown function '{}'", name);
                 }
             }
 
@@ -155,7 +155,7 @@ impl RawExpr {
 
                 if func_params.len() != args.len() {
                     return err_fmt!(
-                        "Resolver Error: Function {} takes {} argument(s) but got {}",
+                        "Resolver Error: function {} takes {} argument(s) but got {}",
                         func,
                         func_params.len(),
                         args.len()

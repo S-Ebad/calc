@@ -104,7 +104,7 @@ impl Function {
             };
 
             return Err(format!(
-                "Invalid Arguments: {} takes {} argument(s) but got {}",
+                "Eval Error: function {} takes {} argument(s) but got {}",
                 self,
                 arity_str,
                 args.len()
@@ -130,7 +130,7 @@ impl Function {
 
                 if min > max {
                     return Err(format!(
-                        "Invalid Arguments: clamp range min ({}) must be less than max ({})",
+                        "Eval Error: clamp range min ({}) must be less than max ({})",
                         min, max
                     ));
                 }
@@ -146,7 +146,7 @@ impl Function {
                     && normalized as i64 % 2 != 0
                 {
                     return Err(format!(
-                        "Invalid Expression: tan({}) is undefined (asymptote",
+                        "Eval Error: function tan({}) is undefined at asymptote (pi / 2 + n * pi)",
                         args[0]
                     ));
                 }
@@ -162,7 +162,7 @@ impl Function {
             F::Cbrt => args[0].cbrt(),
             F::Recip => {
                 if args[0] == 0f64 {
-                    return Err("Invalid Expression: division by zero recip(0) (1/0)".to_string());
+                    return Err("Eval Error: recip(0) is undefined (division by zero)".to_string());
                 }
 
                 args[0].recip()
@@ -173,7 +173,7 @@ impl Function {
 
                 if root == 0f64 {
                     return Err(format!(
-                        "Invalid Expression: division by zero (sqrt({0}, 0) = {0}^(1/0))",
+                        "Eval Error: sqrt({0}, 0) is undefined (division by zero: {0} ^ (1/0))",
                         x
                     ));
                 }
@@ -191,20 +191,13 @@ impl Function {
                 args[0].log(base)
             }
 
-            F::Max => args
-                .iter()
-                .copied()
-                .reduce(f64::max)
-                .ok_or("Function Error: max function has thrown an error")?,
-            F::Min => args
-                .iter()
-                .copied()
-                .reduce(f64::min)
-                .ok_or("Function Error: min function has thrown an error")?,
+            F::Max => args.iter().copied().reduce(f64::max).unwrap(),
+            F::Min => args.iter().copied().reduce(f64::min).unwrap(),
+
             F::Pow => {
                 if args[0] == 0f64 && args[1] < 0f64 {
                     return Err(format!(
-                        "Invalid Expression: division by zero ({0}^{1} = 1/({0}^{2}) = 1 / {0})",
+                        "Eval Error: pow({0}, {1}) is undefined (division by zero: 1/{0}^{2})",
                         args[0],
                         args[1],
                         args[1].abs()
@@ -219,7 +212,7 @@ impl Function {
 
         if result.is_nan() {
             return Err(format!(
-                "Invalid Expression: {}({}) results in NaN",
+                "Eval Error: {}({}) is undefined",
                 self,
                 args.iter()
                     .map(|x| x.to_string())

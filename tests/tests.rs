@@ -265,7 +265,7 @@ mod constants_tests {
     fn scientific_notation_vs_euler() {
         assert_eq!(solve("9e"), round(9.0 * std::f64::consts::E));
         assert_eq!(solve("9e2"), 900.0);
-        assert!(solve_err("9e9e9").contains("Invalid Number"));
+        assert!(solve_err("9e9e9").contains("Invalid number"));
     }
 
     #[test]
@@ -669,6 +669,7 @@ mod error_tests {
 
     #[test]
     fn power_zero_to_negative() {
+        println!("{}", solve_err("0 ^ -1"));
         assert!(solve_err("0 ^ -1").contains("division by zero"));
         assert!(solve_err("0 ^ -2").contains("division by zero"));
         assert!(solve_err("pow(0, -1)").contains("division by zero"));
@@ -688,8 +689,8 @@ mod error_tests {
 
     #[test]
     fn mismatched_close() {
-        assert!(solve_err("1 + 2)").contains("unexpected closing parenthesis"));
-        assert!(solve_err("(1 + 2))").contains("unexpected closing parenthesis"));
+        assert!(solve_err("1 + 2)").contains("Unexpected closing parenthesis"));
+        assert!(solve_err("(1 + 2))").contains("Unexpected closing parenthesis"));
     }
 
     #[test]
@@ -699,9 +700,9 @@ mod error_tests {
 
     #[test]
     fn invalid_token() {
-        assert!(solve_err("1 @ 2").contains("Invalid Token"));
-        assert!(solve_err("1 # 2").contains("Invalid Token"));
-        assert!(solve_err("1 $ 2").contains("Invalid Token"));
+        assert!(solve_err("1 @ 2").contains("Invalid token"));
+        assert!(solve_err("1 # 2").contains("Invalid token"));
+        assert!(solve_err("1 $ 2").contains("Invalid token"));
     }
 
     #[test]
