@@ -143,12 +143,6 @@ mod arithmetic_tests {
     }
 
     #[test]
-    fn large_factorial_overflow() {
-        // The implementation caps factorial at 170
-        assert!(solve_err("171!").contains("too large"));
-    }
-
-    #[test]
     fn modulo_with_decimals() {
         // 10.5 % 3 = 1.5
         assert_eq!(solve("10.5 % 3"), 1.5);
@@ -157,6 +151,12 @@ mod arithmetic_tests {
 
 mod unary_tests {
     use super::*;
+
+    #[test]
+    fn large_factorial_overflow() {
+        // The implementation caps factorial at 170
+        assert!(solve_err("171!").contains("too large"));
+    }
 
     #[test]
     fn unary_neg() {
@@ -177,6 +177,26 @@ mod unary_tests {
         assert_eq!(solve("+0"), 0.0);
         assert_eq!(solve("+100"), 100.0);
     }
+
+    #[test]
+    fn unary_neg_with_functions() {
+        assert_eq!(solve("abs -5"), 5.0);
+        assert_eq!(solve("abs -100"), 100.0);
+        assert_eq!(solve("floor -3.2"), -4.0);
+        assert_eq!(solve("ceil -3.9"), -3.0);
+    }
+
+    #[test]
+    fn double_negation() {
+        assert_eq!(solve("--5"), 5.0);
+        assert_eq!(solve("--0"), 0.0);
+        assert_eq!(solve("1 + --3"), 4.0);
+    }
+}
+
+// this is only factorial
+mod postfix {
+    use super::*;
 
     #[test]
     fn factorial_5() {
@@ -211,21 +231,6 @@ mod unary_tests {
         assert_eq!(solve("3! ^ 2"), 36.0);
         assert_eq!(solve("(2 + 1)!"), 6.0);
     }
-
-    #[test]
-    fn unary_neg_with_functions() {
-        assert_eq!(solve("abs -5"), 5.0);
-        assert_eq!(solve("abs -100"), 100.0);
-        assert_eq!(solve("floor -3.2"), -4.0);
-        assert_eq!(solve("ceil -3.9"), -3.0);
-    }
-
-    #[test]
-    fn double_negation() {
-        assert_eq!(solve("--5"), 5.0);
-        assert_eq!(solve("--0"), 0.0);
-        assert_eq!(solve("1 + --3"), 4.0);
-    }
 }
 
 mod constants_tests {
@@ -240,12 +245,20 @@ mod constants_tests {
     }
 
     #[test]
+    fn boolean_constants() {
+        assert_eq!(solve("true"), 1.0);
+        assert_eq!(solve("false"), 0.0);
+    }
+
+    #[test]
     fn implicit_mul() {
         assert_eq!(solve("2(3 + 1)"), 8.0);
         assert_eq!(solve("(2 + 3)4"), 20.0);
         assert_eq!(solve("2pi"), round(2.0 * std::f64::consts::PI));
         assert_eq!(solve("3(2 + 2)"), 12.0);
         assert_eq!(solve("2e"), round(2.0 * std::f64::consts::E));
+        assert_eq!(solve("2true"), 2.0);
+        assert_eq!(solve("5false"), 0.0);
     }
 
     #[test]
@@ -763,6 +776,8 @@ mod validation_tests {
         assert!(calc.solve("pi = 13").is_err());
         assert!(calc.solve("e = 13").is_err());
         assert!(calc.solve("inf = 13").is_err());
+        assert!(calc.solve("true = 1").is_err());
+        assert!(calc.solve("false = 1").is_err());
 
 
         //sin is a built-in global
@@ -869,5 +884,76 @@ mod user_function_tests {
         calc.solve("g(x) = 20x").unwrap();
 
         assert_eq!(calc.solve("f(g(10))").unwrap().unwrap(), 2000.0);
+    }
+}
+
+mod logical_operators {
+    use super::*;
+
+    #[test]
+    fn equality_and_inequality() {
+        assert_eq!(solve("5 == 5"), 1.0);
+        assert_eq!(solve("5 == 6"), 0.0);
+        assert_eq!(solve("5 != 6"), 1.0);
+        assert_eq!(solve("5 != 5"), 0.0);
+    }
+
+    #[test]
+    fn comparison() {
+        assert_eq!(solve("3 < 5"), 1.0);
+        assert_eq!(solve("5 < 3"), 0.0);
+        assert_eq!(solve("5 <= 5"), 1.0);
+        assert_eq!(solve("6 > 4"), 1.0);
+        assert_eq!(solve("4 > 6"), 0.0);
+        assert_eq!(solve("4 >= 4"), 1.0);
+    }
+
+    #[test]
+    fn boolean_logic() {
+        // And logic (both non-zero)
+        assert_eq!(solve("true && true"), 1.0);
+        assert_eq!(solve("true && false"), 0.0);
+        assert_eq!(solve("1 && 5"), 1.0);
+
+        // Or logic (at least one non-zero)
+        assert_eq!(solve("true || false"), 1.0);
+        assert_eq!(solve("false || false"), 0.0);
+        assert_eq!(solve("0 || 3.5"), 1.0);
+    }
+
+    #[test]
+    fn logical_precedence() {
+        // Comparison operators should have higher precedence than logical AND/OR
+        assert_eq!(solve("5 > 3 && 2 < 4"), 1.0);
+        assert_eq!(solve("5 < 3 || 2 < 4"), 1.0);
+        
+        // Arithmetic has higher precedence than comparison
+        assert_eq!(solve("2 + 3 == 6 - 1"), 1.0);
+    }
+}
+
+mod ternary_operators {
+    use super::*;
+
+    #[test]
+    fn basic_ternary() {
+        assert_eq!(solve("true ? 10 : 20"), 10.0);
+        assert_eq!(solve("false ? 10 : 20"), 20.0);
+        assert_eq!(solve("5 > 3 ? 100 : -100"), 100.0);
+    }
+
+    #[test]
+    fn nested_ternary() {
+        // true ? (false ? 1 : 2) : 3 -> 2.0
+        assert_eq!(solve("true ? false ? 1 : 2 : 3"), 2.0);
+        // false ? 1 : (true ? 2 : 3) -> 2.0
+        assert_eq!(solve("false ? 1 : true ? 2 : 3"), 2.0);
+    }
+
+    #[test]
+    fn complex_expressions_in_branches() {
+        assert_eq!(solve("true ? 5 * 4 : 10 / 2"), 20.0);
+        assert_eq!(solve("false ? 5 * 4 : 10 / 2"), 5.0);
+        assert_eq!(solve("true ? sin(0) : cos(0)"), 0.0);
     }
 }
