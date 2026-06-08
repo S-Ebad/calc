@@ -175,7 +175,7 @@ fn led(
 
             let then = parse_expression(lexer, 0, funcs)?;
             if lexer.next() != Some(Token::Colon) {
-                return Err("Parse Error: expected Colon ':' after '?' ".to_string());
+                return Err("Parse Error: expected colon ':' after '?' ".to_string());
             }
 
             let else_ = parse_expression(lexer, 0, funcs)?;

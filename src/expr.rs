@@ -1,6 +1,6 @@
 use std::{borrow::Borrow, collections::HashMap, fmt};
 
-use crate::{function::Function, operator::Operator, user_function::UserFunction};
+use crate::{calc::CacheKey, function::Function, operator::Operator, user_function::UserFunction};
 
 #[macro_export]
 macro_rules! write_args {
@@ -17,6 +17,10 @@ macro_rules! write_args {
                 .join(", ")
         )
     };
+}
+
+fn to_bits(args: &[f64]) -> Vec<u64> {
+    args.iter().map(|x| x.to_bits()).collect()
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -61,6 +65,7 @@ impl Expr {
         self,
         vars: &HashMap<K, f64>,
         funcs: &HashMap<String, UserFunction>,
+        cache: &mut HashMap<CacheKey, f64>,
         depth: u32,
     ) -> Result<f64, String>
     where
@@ -74,17 +79,17 @@ impl Expr {
         match self {
             Expr::Number(num) => Ok(num),
             Expr::Binary { op, lhs, rhs } => {
-                let lhs = lhs.eval(vars, funcs, depth)?;
-                let rhs = rhs.eval(vars, funcs, depth)?;
+                let lhs = lhs.eval(vars, funcs, cache, depth)?;
+                let rhs = rhs.eval(vars, funcs, cache, depth)?;
 
                 op.perform_op(lhs, Some(rhs))
             }
-            Expr::Unary { op, expr } => op.perform_op(expr.eval(vars, funcs, depth)?, None),
-            Expr::Postfix { expr, op } => op.perform_op(expr.eval(vars, funcs, depth)?, None),
+            Expr::Unary { op, expr } => op.perform_op(expr.eval(vars, funcs, cache, depth)?, None),
+            Expr::Postfix { expr, op } => op.perform_op(expr.eval(vars, funcs, cache, depth)?, None),
             Expr::Call { func, args } => {
                 let args = args
                     .into_iter()
-                    .map(|expr| expr.eval(vars, funcs, depth))
+                    .map(|expr| expr.eval(vars, funcs, cache, depth))
                     .collect::<Result<Vec<f64>, _>>()?;
 
                 func.call(&args)
@@ -95,10 +100,10 @@ impl Expr {
                 then,
                 else_,
             } => {
-                if condit.eval(vars, funcs, depth)? != 0.0 {
-                    then.eval(vars, funcs, depth)
+                if condit.eval(vars, funcs, cache, depth)? != 0.0 {
+                    then.eval(vars, funcs, cache, depth)
                 } else {
-                    else_.eval(vars, funcs, depth)
+                    else_.eval(vars, funcs, cache, depth)
                 }
             }
 
@@ -111,8 +116,15 @@ impl Expr {
 
                 let eval_args = args
                     .into_iter()
-                    .map(|x| x.eval(vars, funcs, depth))
+                    .map(|x| x.eval(vars, funcs, cache, depth))
                     .collect::<Result<Vec<f64>, _>>()?;
+
+                let key = (name, to_bits(&eval_args));
+
+                // cache hit
+                if let Some(num) = cache.get(&key) {
+                    return Ok(*num)
+                }
 
                 let mut scope = func_params
                     .iter()
@@ -125,7 +137,10 @@ impl Expr {
                 }
 
                 let new_body = func_body.clone().resolve(&scope, funcs)?;
-                new_body.eval(&scope, funcs, depth+1)
+                let result = new_body.eval(&scope, funcs, cache, depth+1)?;
+                cache.insert(key, result);
+
+                Ok(result)
             }
         }
     }

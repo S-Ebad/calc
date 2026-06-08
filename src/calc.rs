@@ -7,9 +7,12 @@ use std::collections::HashMap;
 
 const PRECISION: f64 = 1e10;
 
+pub type CacheKey = (String, Vec<u64>);
+
 pub struct Calculator {
-    variables: HashMap<String, f64>,
+    vars: HashMap<String, f64>,
     funcs: HashMap<String, UserFunction>,
+    cache: HashMap<CacheKey, f64>,
 }
 
 enum ExprKind {
@@ -20,17 +23,21 @@ enum ExprKind {
 
 impl Calculator {
     pub fn new() -> Self {
-        Calculator {
-            variables: HashMap::new(),
+        Self {
+            vars: HashMap::new(),
             funcs: HashMap::new(),
+            cache: HashMap::new(),
         }
     }
 
     pub fn set_variable(&mut self, name: &str, value: f64) {
-        self.variables.insert(name.to_string(), value);
+        self.vars.insert(name.to_string(), value);
     }
 
     pub fn set_user_function(&mut self, function: UserFunction) {
+        // clear cache for redefined functions
+        self.cache.retain(|(name, _), _| name != function.name());
+
         self.funcs.insert(function.name().to_owned(), function);
     }
 
@@ -47,24 +54,25 @@ impl Calculator {
             }
 
             ExprKind::Assign(name, expr) => {
-                let expr = expr.resolve(&self.variables, &self.funcs)?;
+                let expr = expr.resolve(&self.vars, &self.funcs)?;
 
-                let ans = expr.eval(&self.variables, &self.funcs, 0)?;
+                let ans = expr.eval(&self.vars, &self.funcs, &mut self.cache, 0)?;
                 self.set_variable(&name, ans);
 
                 ans
             }
 
             ExprKind::Eval(expr) => {
-                let expr = expr.resolve(&self.variables, &self.funcs)?;
+                let expr = expr.resolve(&self.vars, &self.funcs)?;
 
-                expr.eval(&self.variables, &self.funcs, 0)?
+                expr.eval(&self.vars, &self.funcs, &mut self.cache, 0)?
             }
         };
 
         let ans = (ans * PRECISION).round() / PRECISION;
         self.set_variable("ans", ans);
 
+        // dbg!(&self.cache);
         Ok(Some(ans))
     }
 
