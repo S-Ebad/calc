@@ -4,7 +4,6 @@ use crate::err_fmt;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Function {
-    // 1-arg functions
     Sin,
     Cos,
     Tan,

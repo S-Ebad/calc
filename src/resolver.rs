@@ -22,12 +22,15 @@ macro_rules! err_ident {
 }
 
 pub fn is_constant(name: &str) -> Option<f64> {
-    match name {
+    match name.to_lowercase().as_str() {
         "pi" => Some(std::f64::consts::PI),
         "e" => Some(std::f64::consts::E),
         "inf" => Some(f64::INFINITY),
         "true" => Some(1.0),
         "false" => Some(0.0),
+        "tau" => Some(std::f64::consts::TAU),
+        "nan" => Some(f64::NAN),
+        "phi" => Some(std::f64::consts::GOLDEN_RATIO),
 
         _ => None,
     }
