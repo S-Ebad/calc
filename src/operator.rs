@@ -54,51 +54,51 @@ fn is_next_token(iter: &mut Peekable<Chars>, val: Option<&char>) -> bool {
 
 impl Operator {
     // get operator from char. last_token is needed for Unary
-    pub fn from(c: char, iter: &mut Peekable<Chars>) -> Result<Self, String> {
+    pub fn from(c: char, iter: &mut Peekable<Chars>) -> Option<Self> {
         match c {
-            '&' if is_next_token(iter, Some(&'&')) => Ok(Operator::And),
+            '&' if is_next_token(iter, Some(&'&')) => Some(Operator::And),
 
-            '|' if is_next_token(iter, Some(&'|')) => Ok(Operator::Or),
+            '|' if is_next_token(iter, Some(&'|')) => Some(Operator::Or),
 
             '=' => {
                 if is_next_token(iter, Some(&'=')) {
-                    Ok(Operator::IsEqual)
+                    Some(Operator::IsEqual)
                 } else {
-                    Ok(Operator::Equal)
+                    Some(Operator::Equal)
                 }
             }
 
             '>' => {
                 if is_next_token(iter, Some(&'=')) {
-                    Ok(Operator::GreaterEqual)
+                    Some(Operator::GreaterEqual)
                 } else {
-                    Ok(Operator::GreaterThan)
+                    Some(Operator::GreaterThan)
                 }
             }
 
             '<' => {
                 if is_next_token(iter, Some(&'=')) {
-                    Ok(Operator::LessEqual)
+                    Some(Operator::LessEqual)
                 } else {
-                    Ok(Operator::LessThan)
+                    Some(Operator::LessThan)
                 }
             }
 
             '!' => {
                 if is_next_token(iter, Some(&'=')) {
-                    Ok(Operator::NotEqual)
+                    Some(Operator::NotEqual)
                 } else {
-                    Ok(Operator::Fac)
+                    Some(Operator::Fac)
                 }
             }
 
-            '+' => Ok(Operator::Add),
-            '-' => Ok(Operator::Sub),
-            '/' => Ok(Operator::Div),
-            '*' => Ok(Operator::Mul),
-            '^' => Ok(Operator::Pow),
-            '%' => Ok(Operator::Mod),
-            _ => err_fmt!("Lexer Error: invalid operator '{}'", c),
+            '+' => Some(Operator::Add),
+            '-' => Some(Operator::Sub),
+            '/' => Some(Operator::Div),
+            '*' => Some(Operator::Mul),
+            '^' => Some(Operator::Pow),
+            '%' => Some(Operator::Mod),
+            _ => None,
         }
     }
 
