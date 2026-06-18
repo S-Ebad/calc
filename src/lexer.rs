@@ -1,6 +1,6 @@
 use std::{iter::Peekable, str::Chars, fmt};
 
-use crate::{err_fmt, function::Function, operator::Operator};
+use crate::{constant::Constant, err_fmt, function::Function, operator::Operator};
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum Token {
@@ -8,6 +8,7 @@ pub enum Token {
     Number(f64),
     Identifier(String), // a word is an identifier before being a function/constant/variable
     Function(Function),
+    Constant(Constant),
     Comma,
     LParen,
     RParen,
@@ -33,6 +34,7 @@ impl fmt::Display for Token {
             Token::RParen => ")",
             Token::QuestionMark => "?",
             Token::Colon => ":",
+            Token::Constant(constant) => &constant.to_string(),
         };
 
         write!(f, "{}", name)
@@ -84,6 +86,10 @@ impl Token {
                 word.push(iter.next().unwrap());
             }
 
+            if let Some(constant) = Constant::from(&word) {
+                return Ok(Token::Constant(constant));
+            }
+
             return Ok(Token::Identifier(word));
         }
 
@@ -104,7 +110,7 @@ impl Token {
     pub fn left_bp(&self) -> u8 {
         match self {
             Token::Operator(op) => op.bp().0,
-            Token::LParen | Token::Identifier(_) | Token::Number(_) => {
+            Token::LParen | Token::Identifier(_) | Token::Number(_) | Token::Constant(_) => {
                 Operator::ImplicitMul.bp().0 // Uses 11
             }
 

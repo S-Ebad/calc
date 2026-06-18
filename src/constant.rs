@@ -1,3 +1,5 @@
+use std::fmt;
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Constant {
     Pi,
@@ -37,5 +39,18 @@ impl Constant {
     }
 }
 
+impl fmt::Display for Constant {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let constant = match self {
+            Constant::Pi => "pi",
+            Constant::E => "e",
+            Constant::Inf => "inf",
+            Constant::True => "true",
+            Constant::False => "false",
+            Constant::Tau => "tau",
+            Constant::Phi => "phi",
+        };
 
-
+        write!(f, "{}", constant)
+    }
+}

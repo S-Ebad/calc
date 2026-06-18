@@ -21,21 +21,6 @@ macro_rules! err_ident {
     }};
 }
 
-pub fn is_constant(name: &str) -> Option<f64> {
-    match name.to_lowercase().as_str() {
-        "pi" => Some(std::f64::consts::PI),
-        "e" => Some(std::f64::consts::E),
-        "inf" => Some(f64::INFINITY),
-        "true" => Some(1.0),
-        "false" => Some(0.0),
-        "tau" => Some(std::f64::consts::TAU),
-        "nan" => Some(f64::NAN),
-        "phi" => Some(std::f64::consts::GOLDEN_RATIO),
-
-        _ => None,
-    }
-}
-
 impl RawExpr {
     pub fn resolve<K>(
         self,
@@ -74,7 +59,7 @@ impl RawExpr {
                 }
             }
             RawExpr::Apply { name, mut args } => {
-                if let Some(var) = is_constant(&name).or(vars.get(&name).cloned()) {
+                if let Some(var) = vars.get(&name).cloned() {
                     if args.len() != 1 {
                         return err_fmt!(
                             "Resolver Error: cannot multiply {} by multiple expressions ({})",
@@ -137,7 +122,7 @@ impl RawExpr {
                 }
             }
             RawExpr::Identifier(ident) => {
-                if let Some(var) = vars.get(&ident).cloned().or(is_constant(&ident)) {
+                if let Some(var) = vars.get(&ident).cloned() {
                     Expr::Number(var)
                 } else {
                     return err_ident!(ident);
@@ -173,6 +158,8 @@ impl RawExpr {
                         .collect::<Result<Vec<Expr>, _>>()?,
                 }
             }
+
+            RawExpr::Constant(constant) => Expr::Number(constant.value()),
         };
 
         Ok(expr)

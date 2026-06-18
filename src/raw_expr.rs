@@ -1,9 +1,9 @@
 use crate::{
+    constant::Constant,
     err_fmt,
     function::Function,
     lexer::{Lexer, Token},
     operator::Operator,
-    resolver::is_constant,
     user_function::UserFunction,
     write_args,
 };
@@ -13,7 +13,7 @@ use std::{collections::HashMap, fmt};
 #[derive(Debug, PartialEq, Clone)]
 pub enum RawExpr {
     Number(f64),
-
+    Constant(Constant),
     Identifier(String),
 
     Binary {
@@ -87,6 +87,7 @@ fn consume_args(
 fn nud(lexer: &mut Lexer, funcs: &HashMap<String, UserFunction>) -> Result<RawExpr, String> {
     let expr = match lexer.next() {
         Some(Token::Number(num)) => RawExpr::Number(num),
+        Some(Token::Constant(constant)) => RawExpr::Constant(constant),
         Some(Token::Identifier(name)) => {
             let is_func = Function::from(&name).is_some()
                 || funcs.contains_key(&name)
@@ -95,7 +96,6 @@ fn nud(lexer: &mut Lexer, funcs: &HashMap<String, UserFunction>) -> Result<RawEx
             if !is_func {
                 RawExpr::Identifier(name)
             } else {
-
                 if matches!(lexer.peek(), Some(Token::Comma | Token::RParen)) {
                     return err_fmt!("Parse Error: '{}' is a function, not a value", name);
                 }
@@ -154,7 +154,7 @@ fn led(
         // Expression is done. Stop parsing
         Some(Token::RParen | Token::Comma) => lhs,
 
-        Some(token @ (Token::LParen | Token::Identifier(_) | Token::Number(_))) => {
+        Some(token @ (Token::LParen | Token::Identifier(_) | Token::Number(_) | Token::Constant(_))) => {
             if matches!(token, &Token::Number(_)) && matches!(lhs, RawExpr::Number(_)) {
                 return Err("Parse Error: missing operator between expression".to_string());
             }
@@ -241,13 +241,14 @@ impl RawExpr {
             return Err("Parse Error: no expression to parse".to_string());
         }
 
+        println!("{:?}", lexer);
         let expr = parse_expression(&mut lexer, 0, funcs)?;
 
         if let Some(token) = lexer.peek() {
             return Err(if matches!(token, Token::RParen) {
                 "Parse Error: unexpected closing parenthesis ')'".to_string()
             } else {
-                format!("Parse Error: unexpected token: {:?}", token)
+                format!("Parse Error: unexpected token: {}", token)
             });
         }
 
@@ -266,10 +267,8 @@ impl RawExpr {
                     return Err("Parse Error: 'ans' is a reserved read-only variable".to_string());
                 }
 
-                RawExpr::Apply { name, .. } | RawExpr::Identifier(name)
-                    if is_constant(name).is_some() =>
-                {
-                    return err_fmt!("Parse Error: attempt to redefine constant '{}'", name);
+                RawExpr::Constant(constant) => {
+                    return err_fmt!("Parse Error: attempt to redefine constant '{}'", constant);
                 }
 
                 RawExpr::Call { func, .. } => {
@@ -305,6 +304,7 @@ impl fmt::Display for RawExpr {
             RawExpr::Apply { name, args } => write_args!(f, "Apply", name, args),
             RawExpr::Call { func, args } => write_args!(f, "Call", func, args),
             RawExpr::UserCall { name, args } => write_args!(f, "UserCall", name, args),
+            RawExpr::Constant(constant) => write!(f, "{}", constant),
         }
     }
 }
