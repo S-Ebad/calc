@@ -241,7 +241,6 @@ impl RawExpr {
             return Err("Parse Error: no expression to parse".to_string());
         }
 
-        println!("{:?}", lexer);
         let expr = parse_expression(&mut lexer, 0, funcs)?;
 
         if let Some(token) = lexer.peek() {
