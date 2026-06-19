@@ -1,3 +1,7 @@
+use strum::IntoEnumIterator;
+
+use crate::constant::Constant;
+use crate::function::Function;
 use crate::lexer::Lexer;
 use crate::operator::Operator;
 use crate::raw_expr::RawExpr;
@@ -47,7 +51,48 @@ impl Calculator {
         self.funcs.insert(function.name().to_owned(), function);
     }
 
+    fn help(&self, name: &str) {
+        if name.is_empty() {
+            let glob_funcs: Vec<String> = Function::iter()
+                .map(|f| f.to_string().to_lowercase())
+                .collect();
+
+            let glob_const: Vec<String> = Constant::iter()
+                .map(|c| c.to_string().to_lowercase())
+                .collect();
+
+            let user_funcs: Vec<&str> = self.funcs.keys().map(|k| k.as_str()).collect();
+
+            println!("Available functions: {}", glob_funcs.join(", "));
+            println!("Available constants: {}", glob_const.join(", "));
+            println!(
+                "Available user-defined functions: {}",
+                user_funcs.join(", ")
+            );
+
+            println!("Type 'help <name>' for further details.");
+
+            return;
+        }
+
+        println!("Helping for: {}", name);
+    }
+
+    fn is_valid_help_name(s: &str) -> bool {
+        s.is_empty() || s.chars().all(|c| c.is_alphabetic() || c == '_')
+    }
+
     pub fn solve(&mut self, buf: &str) -> Result<Option<f64>, String> {
+        if let Some(rest) = buf.strip_prefix("help") {
+            let rest = rest.trim();
+
+            if Self::is_valid_help_name(rest) {
+                self.help(rest.trim());
+
+                return Ok(None);
+            }
+        }
+
         let lexer = Lexer::new(buf)?;
         let expr = RawExpr::parse(lexer, &self.funcs)?;
         expr.check_errors()?;

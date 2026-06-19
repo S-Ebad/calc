@@ -1,8 +1,8 @@
-use std::{f64, fmt};
-
 use crate::err_fmt;
+use std::{f64, fmt};
+use strum::EnumIter;
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, EnumIter)]
 pub enum Function {
     Sin,
     Cos,

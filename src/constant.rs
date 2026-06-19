@@ -1,6 +1,7 @@
 use std::fmt;
+use strum::EnumIter;
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, EnumIter)]
 pub enum Constant {
     Pi,
     E,
