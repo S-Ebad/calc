@@ -225,6 +225,45 @@ impl Function {
 
         Ok(result)
     }
+
+    pub fn help(&self) -> &'static str {
+        use Function as F;
+
+        match self {
+            F::Sin => "sin(x): sine of x, in radians",
+            F::Cos => "cos(x): cosine of x, in radians",
+            F::Tan => "tan(x): tangent of x, in radians (undefined at pi/2 + n*pi)",
+            F::Sqrt => "sqrt(x, n?=2): nth root of x, defaults to square root (n=2)",
+            F::Abs => "abs(x): absolute value of x",
+            F::Ln => "ln(x): natural logarithm of x",
+            F::Exp => "exp(x): e raised to the power of x",
+            F::Floor => "floor(x): largest integer less than or equal to x",
+            F::Ceil => "ceil(x): smallest integer greater than or equal to x",
+            F::Round => "round(x): x rounded to the nearest integer",
+            F::Recip => "recip(x): reciprocal of x (1/x)",
+            F::Cbrt => "cbrt(x): cube root of x",
+            F::Log => "log(x, base?=10): logarithm of x with given base, defaults to base 10",
+            F::Rad => "rad(x): converts x from degrees to radians",
+            F::Deg => "deg(x): converts x from radians to degrees",
+            F::Pow => "pow(x, y): x raised to the power of y",
+
+            F::Trunc => "trunc(x): truncates the decimal part of x",
+            F::Int => "int(x): truncates the decimal part of x (alias of trunc)",
+            F::Asin => "asin(x): inverse sine of x, result in radians",
+            F::Acos => "acos(x): inverse cosine of x, result in radians",
+            F::Atan => "atan(x): inverse tangent of x, result in radians",
+            F::Atan2 => "atan2(x, y): inverse tangent of x/y, using signs to determine quadrant",
+            F::Sinh => "sinh(x): hyperbolic sine of x",
+            F::Cosh => "cosh(x): hyperbolic cosine of x",
+            F::Tanh => "tanh(x): hyperbolic tangent of x",
+            F::Clamp => "clamp(x, min, max): restricts x to the range [min, max]",
+            F::Gcd => "gcd(x, y): greatest common divisor of x and y",
+            F::Lcm => "lcm(x, y): least common multiple of x and y",
+
+            F::Max => "max(...): largest value among all given arguments",
+            F::Min => "min(...): smallest value among all given arguments",
+        }
+    }
 }
 
 impl fmt::Display for Function {

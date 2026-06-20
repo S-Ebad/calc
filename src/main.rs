@@ -3,6 +3,7 @@ use rustyline::{DefaultEditor, error::ReadlineError};
 
 fn repl(mut calculator: Calculator) {
     let mut rl = DefaultEditor::new().expect("Default Editor initialization failed");
+    let _ = rl.load_history(".calc");
 
     loop {
         let input = match rl.readline("> ") {
@@ -29,6 +30,8 @@ fn repl(mut calculator: Calculator) {
 
         println!();
     }
+
+    let _ = rl.save_history(".calc");
 }
 
 fn main() {

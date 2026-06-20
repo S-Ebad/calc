@@ -39,11 +39,6 @@ pub enum Operator {
     Or,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum Assoc {
-    Left,
-    Right,
-}
 
 // simple helper
 fn is_next_token(iter: &mut Peekable<Chars>, val: Option<&char>) -> bool {
@@ -107,34 +102,23 @@ impl Operator {
         match self {
             Operator::Equal => (1, 0),
 
-            Operator::Or => (1, 2),
-            Operator::And => (3, 4),
+            Operator::Or => (3, 4),
+            Operator::And => (5, 6),
 
-            Operator::IsEqual => (5, 6),
-            Operator::NotEqual => (5, 6),
-            Operator::LessThan => (5, 6),
-            Operator::GreaterThan => (5, 6),
-            Operator::LessEqual => (5, 6),
-            Operator::GreaterEqual => (5, 6),
+            Operator::IsEqual | Operator::NotEqual => (7, 8),
 
-            Operator::Add | Operator::Sub => (7, 8),
-            Operator::Mul | Operator::Div | Operator::Mod => (9, 10),
-            Operator::ImplicitMul => (11, 11),
-            Operator::Neg | Operator::Pos => (11, 12),
-            Operator::Pow => (13, 12),
-            Operator::Fac => (14, 0),
+            Operator::LessThan
+            | Operator::GreaterThan
+            | Operator::LessEqual
+            | Operator::GreaterEqual => (9, 10),
+
+            Operator::Add | Operator::Sub => (11, 12),
+            Operator::Mul | Operator::Div | Operator::Mod => (13, 14),
+            Operator::ImplicitMul => (15, 15),
+            Operator::Neg | Operator::Pos => (15, 16),
+            Operator::Pow => (17, 16),
+            Operator::Fac => (18, 0),
         }
-    }
-
-    fn associativity(&self) -> Assoc {
-        match self {
-            Operator::Pow | Operator::Neg | Operator::Pos => Assoc::Right,
-            _ => Assoc::Left,
-        }
-    }
-
-    pub fn is_left_assoc(&self) -> bool {
-        matches!(self.associativity(), Assoc::Left)
     }
 
     // perform operator. It'll perform the operator depending on if num2 is supplied or not

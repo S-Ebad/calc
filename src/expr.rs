@@ -4,11 +4,10 @@ use crate::{calc::CacheKey, function::Function, operator::Operator, user_functio
 
 #[macro_export]
 macro_rules! write_args {
-    ($f:expr, $name:literal, $func:expr, $args:expr) => {
+    ($f:expr, $func:expr, $args:expr) => {
         write!(
             $f,
-            "{}({}, args=[{}])",
-            $name,
+            "{}({})",
             $func,
             $args
                 .iter()
@@ -151,21 +150,21 @@ impl fmt::Display for Expr {
         match self {
             Expr::Number(n) => write!(f, "{:.2}", n),
 
-            Expr::Binary { op, lhs, rhs } => write!(f, "{}(lhs={}, lhs={})", op, lhs, rhs),
+            Expr::Binary { op, lhs, rhs } => write!(f, "{} {} {}", lhs, op, rhs),
             Expr::Unary { op, expr } | Expr::Postfix { op, expr } => {
                 write!(f, "{}({})", op, expr)
             }
             Expr::Call { func, args } => {
-                write_args!(f, "Call", func, args)
+                write_args!(f, func, args)
             }
             Expr::UserCall { name, args } => {
-                write_args!(f, "UserCall", name, args)
+                write_args!(f, name, args)
             }
             Expr::If {
                 condition,
                 then,
                 else_,
-            } => write!(f, "If({}, then={}, else={})", condition, then, else_),
+            } => write!(f, "{} ? {} : {}", condition, then, else_),
         }
     }
 }

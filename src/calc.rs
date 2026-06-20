@@ -65,17 +65,29 @@ impl Calculator {
 
             println!("Available functions: {}", glob_funcs.join(", "));
             println!("Available constants: {}", glob_const.join(", "));
-            println!(
-                "Available user-defined functions: {}",
-                user_funcs.join(", ")
-            );
 
-            println!("Type 'help <name>' for further details.");
+            if !user_funcs.is_empty() {
+                println!(
+                    "Available user-defined functions: {}",
+                    user_funcs.join(", ")
+                );
+            }
 
+            println!("\nType 'help <name>' for further details.");
             return;
         }
 
-        println!("Helping for: {}", name);
+        let help_str = if let Some(func) = Function::from(name) {
+            func.help()
+        } else if let Some(user_func) = self.funcs.get(name) {
+            &user_func.help()
+        } else if let Some(constant) = Constant::from(name) {
+            constant.help()
+        } else {
+            &format!("No help found for '{}'. Type 'help' to see available functions and constants.", name)
+        };
+
+        println!("{}", help_str);
     }
 
     fn is_valid_help_name(s: &str) -> bool {

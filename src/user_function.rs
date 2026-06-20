@@ -25,6 +25,16 @@ impl UserFunction {
         Ok(Self { name, params, body })
     }
 
+    pub fn help(&self) -> String {
+        format!(
+            "{} is a user-defined function.\n\n{}({}) = {}",
+            self.name,
+            self.name,
+            self.params.join(", "),
+            self.body
+        )
+    }
+
     pub fn name(&self) -> &str {
         &self.name
     }

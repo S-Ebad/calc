@@ -154,7 +154,9 @@ fn led(
         // Expression is done. Stop parsing
         Some(Token::RParen | Token::Comma) => lhs,
 
-        Some(token @ (Token::LParen | Token::Identifier(_) | Token::Number(_) | Token::Constant(_))) => {
+        Some(
+            token @ (Token::LParen | Token::Identifier(_) | Token::Number(_) | Token::Constant(_)),
+        ) => {
             if matches!(token, &Token::Number(_)) && matches!(lhs, RawExpr::Number(_)) {
                 return Err("Parse Error: missing operator between expression".to_string());
             }
@@ -288,9 +290,28 @@ impl RawExpr {
 impl fmt::Display for RawExpr {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            RawExpr::Number(n) => write!(f, "{:.2}", n),
+            RawExpr::Number(n) => write!(f, "{}", n),
             RawExpr::Identifier(ident) => write!(f, "{}", ident),
-            RawExpr::Binary { op, lhs, rhs } => write!(f, "{}(lhs={}, lhs={})", op, lhs, rhs),
+            RawExpr::Binary { op, lhs, rhs } => {
+                let (my_left, my_right) = op.bp();
+
+                let lhs_str = match lhs.as_ref() {
+                    RawExpr::Binary { op: child_op, .. } if child_op.bp().0 <= my_left => {
+                        format!("({})", lhs)
+                    }
+                    _ => format!("{}", lhs),
+                };
+                
+
+                let rhs_str = match rhs.as_ref() {
+                    RawExpr::Binary { op: child_op, .. } if child_op.bp().0 < my_right => {
+                        format!("({})", rhs)
+                    }
+                    _ => format!("{}", rhs),
+                };
+
+                write!(f, "{} {} {}", lhs_str, op, rhs_str)
+            }
             RawExpr::Unary { op, expr } | RawExpr::Postfix { op, expr } => {
                 write!(f, "{}({})", op, expr)
             }
@@ -298,11 +319,11 @@ impl fmt::Display for RawExpr {
                 condition,
                 then,
                 else_,
-            } => write!(f, "If({}, then={}, else={})", condition, then, else_),
+            } => write!(f, "{} ? {} : {}", condition, then, else_),
 
-            RawExpr::Apply { name, args } => write_args!(f, "Apply", name, args),
-            RawExpr::Call { func, args } => write_args!(f, "Call", func, args),
-            RawExpr::UserCall { name, args } => write_args!(f, "UserCall", name, args),
+            RawExpr::Apply { name, args } => write_args!(f, name, args),
+            RawExpr::Call { func, args } => write_args!(f, func, args),
+            RawExpr::UserCall { name, args } => write_args!(f, name, args),
             RawExpr::Constant(constant) => write!(f, "{}", constant),
         }
     }

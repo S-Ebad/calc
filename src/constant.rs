@@ -38,6 +38,18 @@ impl Constant {
             Constant::Phi => 1.618_033_988_749_895,
         }
     }
+
+    pub fn help(&self) -> &'static str {
+        match self {
+            Constant::Pi => "pi: ratio of a circle's circumference to its diameter (≈3.14159)",
+            Constant::E => "e: base of the natural logarithm (≈2.71828)",
+            Constant::Inf => "inf: positive infinity",
+            Constant::True => "true: boolean true, represented as 1.0",
+            Constant::False => "false: boolean false, represented as 0.0",
+            Constant::Tau => "tau: full turn in radians, equal to 2*pi (≈6.28319)",
+            Constant::Phi => "phi: the golden ratio, (1+sqrt(5))/2 (≈1.61803)",
+        }
+    }
 }
 
 impl fmt::Display for Constant {
