@@ -135,7 +135,6 @@ impl Calculator {
         let ans = (ans * PRECISION).round() / PRECISION;
         self.set_variable("ans", ans);
 
-        // dbg!(&self.cache);
         Ok(Some(ans))
     }
 

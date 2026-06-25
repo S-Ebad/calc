@@ -312,8 +312,11 @@ impl fmt::Display for RawExpr {
 
                 write!(f, "{} {} {}", lhs_str, op, rhs_str)
             }
-            RawExpr::Unary { op, expr } | RawExpr::Postfix { op, expr } => {
+            RawExpr::Unary { op, expr } => {
                 write!(f, "{}({})", op, expr)
+            }
+            RawExpr::Postfix { op, expr } => {
+                write!(f, "({}){}", expr, op)
             }
             RawExpr::If {
                 condition,
