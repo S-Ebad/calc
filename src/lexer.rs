@@ -1,4 +1,4 @@
-use std::{iter::Peekable, str::Chars, fmt};
+use std::{fmt, iter::Peekable, str::Chars};
 
 use crate::{constant::Constant, err_fmt, function::Function, operator::Operator};
 
@@ -142,42 +142,41 @@ where
 }
 
 fn to_f64(iter: &mut Peekable<Chars>) -> Result<f64, String> {
-    let mut num = take_while(iter, |c| c.is_numeric() || c == '.');
+    let mut num = take_while(iter, |c| c.is_ascii_digit() || c == '.');
 
-    // differentiate between 9 * e (euler's number) and 9e9
-    let mut mul_euler = false;
-    if iter.peek() == Some(&'e') {
-        iter.next();
+    let mut lookahead = iter.clone();
+    let is_exponent = if matches!(lookahead.peek(), Some('e' | 'E')) {
+        lookahead.next();
 
-        if iter
-            .peek()
-            .map(|c| c.is_numeric() || *c == '-')
-            .unwrap_or(false)
-        {
-            num.push('e');
+        if matches!(lookahead.peek(), Some('-' | '+')) {
+            lookahead.next();
+        }
 
-            if iter.peek() == Some(&'-') {
-                num.push(iter.next().unwrap());
-            }
+        matches!(lookahead.peek(), Some(c) if c.is_ascii_digit())
+    } else {
+        false
+    };
 
-            // accept more e & . to invalidate expressions like 9e9e9 or 9e9.9
-            num.push_str(&take_while(iter, |c| {
-                c.is_numeric() || c == 'e' || c == '.'
-            }))
-        } else {
-            mul_euler = true;
+    if is_exponent {
+        num.push(iter.next().unwrap()); // 'e'
+
+        if matches!(iter.peek(), Some('-') | Some('+')) {
+            num.push(iter.next().unwrap());
+        }
+
+        num.push_str(&take_while(iter, |c| c.is_ascii_digit()));
+
+        // things like 9e9e9 or 9e9.2 which are invalid
+        if matches!(iter.peek(), Some('e' | '.' | 'E')) {
+            return Err(format!(
+                "Lexer Error: invalid number '{num}{}'",
+                iter.peek().unwrap()
+            ));
         }
     }
 
-    let result = num
-        .parse::<f64>()
-        .map_err(|_| format!("Lexer Error: invalid number '{}'", num));
-
-    if mul_euler {
-        Ok(result? * std::f64::consts::E)
-    } else {
-        result
-    }
+    num.parse::<f64>()
+        .map_err(|_| format!("Lexer Error: invalid number '{num}'"))
 }
 
 fn tokenize(expr: &str) -> Result<Vec<Token>, String> {
