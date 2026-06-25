@@ -15,6 +15,7 @@ pub enum Token {
 
     QuestionMark,
     Colon,
+    Dot,
 }
 
 #[derive(Debug)]
@@ -34,6 +35,7 @@ impl fmt::Display for Token {
             Token::RParen => ")",
             Token::QuestionMark => "?",
             Token::Colon => ":",
+            Token::Dot => ".",
             Token::Constant(constant) => &constant.to_string(),
         };
 
@@ -99,6 +101,7 @@ impl Token {
             ',' => Ok(Token::Comma),
             '?' => Ok(Token::QuestionMark),
             ':' => Ok(Token::Colon),
+            '.' => Ok(Token::Dot),
 
             _ => err_fmt!("Lexer Error: invalid token '{}'", c),
         };
@@ -113,6 +116,9 @@ impl Token {
             Token::LParen | Token::Identifier(_) | Token::Number(_) | Token::Constant(_) => {
                 Operator::ImplicitMul.bp().0 // Uses 11
             }
+
+            // bind as tight as postfix
+            Token::Dot => Operator::Fac.bp().0,
 
             //binds between Equal and everything else
             Token::QuestionMark => 1,

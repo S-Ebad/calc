@@ -59,26 +59,33 @@ fn consume_args(
     lexer: &mut Lexer,
     funcs: &HashMap<String, UserFunction>,
 ) -> Result<Vec<RawExpr>, String> {
+    // no parenthesis. i.e: sin10
+    if lexer.peek() != Some(&Token::LParen) {
+        return Ok(vec![nud(lexer, funcs)?]);
+    }
+
+    lexer.next();
+
+    // empty arguments. i.e: sin()
+    if lexer.peek() == Some(&Token::RParen) {
+        lexer.next();
+        return Ok(vec![]);
+    }
+
     let mut args: Vec<RawExpr> = Vec::new();
 
-    if lexer.peek() != Some(&Token::LParen) {
-        args.push(nud(lexer, funcs)?);
-    } else {
-        lexer.next();
+    loop {
+        args.push(parse_expression(lexer, 0, funcs)?);
 
-        loop {
-            args.push(parse_expression(lexer, 0, funcs)?);
-
-            if lexer.peek() == Some(&Token::Comma) {
-                lexer.next();
-            } else {
-                break;
-            }
+        if lexer.peek() == Some(&Token::Comma) {
+            lexer.next();
+        } else {
+            break;
         }
+    }
 
-        if !matches!(lexer.next(), Some(Token::RParen)) {
-            return Err("Parse Error: missing closing parenthesis ')'".to_string());
-        }
+    if !matches!(lexer.next(), Some(Token::RParen)) {
+        return Err("Parse Error: missing closing parenthesis ')'".to_string());
     }
 
     Ok(args)
@@ -153,6 +160,26 @@ fn led(
     let expr = match lexer.peek() {
         // Expression is done. Stop parsing
         Some(Token::RParen | Token::Comma) => lhs,
+        Some(Token::Dot) => {
+            lexer.next();
+
+            let name = match lexer.next() {
+                Some(Token::Identifier(name)) => name,
+                Some(other) => return err_fmt!("Parse Error: expected method name after '.', got {}", other),
+                None => return err_fmt!("Parse Error: expected method name after '.', got Nothing"),
+            };
+            
+            let mut args = consume_args(lexer, funcs)?;
+            args.insert(0, lhs);
+
+            if let Some(func) = Function::from(&name) {
+                RawExpr::Call { func, args }
+            } else if funcs.contains_key(&name) {
+                RawExpr::UserCall { name, args }
+            } else {
+                RawExpr::Apply { name, args }
+            }
+        }
 
         Some(
             token @ (Token::LParen | Token::Identifier(_) | Token::Number(_) | Token::Constant(_)),
@@ -301,7 +328,6 @@ impl fmt::Display for RawExpr {
                     }
                     _ => format!("{}", lhs),
                 };
-                
 
                 let rhs_str = match rhs.as_ref() {
                     RawExpr::Binary { op: child_op, .. } if child_op.bp().0 < my_right => {
