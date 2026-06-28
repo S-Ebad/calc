@@ -1,4 +1,4 @@
-use std::{iter::Peekable, str::Chars, fmt};
+use std::{fmt, iter::Peekable, str::Chars};
 
 use crate::{constant::Constant, err_fmt, function::Function, operator::Operator};
 
@@ -68,18 +68,20 @@ impl Iterator for Lexer {
 
 impl Token {
     pub fn from(c: char, iter: &mut Peekable<Chars>) -> Result<Self, String> {
-        if let Some(op) = Operator::from(c, iter) {
-            iter.next();
+        if let Some((op, should_consume)) = Operator::from(c, iter.peek().cloned()) {
+            if should_consume {
+                iter.next();
+            }
 
             return Ok(Token::Operator(op));
         }
 
         if c.is_ascii_digit() {
-            return Ok(Token::Number(to_f64(iter)?));
+            return Ok(Token::Number(to_f64(c, iter)?));
         }
 
         if c.is_alphabetic() {
-            let mut word: String = take_while(iter, |c| c.is_alphabetic() || c == '_');
+            let mut word: String = accumulate(c.to_string(), iter, |c| c.is_alphabetic() || c == '_');
 
             // atan2
             if word == "atan" && iter.peek() == Some(&'2') {
@@ -93,18 +95,15 @@ impl Token {
             return Ok(Token::Identifier(word));
         }
 
-        let result = match c {
+        match c {
             '(' => Ok(Token::LParen),
             ')' => Ok(Token::RParen),
             ',' => Ok(Token::Comma),
             '?' => Ok(Token::QuestionMark),
             ':' => Ok(Token::Colon),
 
-            _ => err_fmt!("Lexer Error: invalid token '{}'", c),
-        };
-
-        iter.next();
-        result
+            _ => err_fmt!("Lexer Error: invalid token '{}'", c)?,
+        }
     }
 
     pub fn left_bp(&self) -> u8 {
@@ -122,27 +121,25 @@ impl Token {
     }
 }
 
-// take_while but doesn't consume an extra element
-fn take_while<F>(iter: &mut Peekable<Chars>, cond: F) -> String
+/// like take_while, but seeded with a string
+fn accumulate<F>(mut seed: String, iter: &mut Peekable<Chars>, cond: F) -> String
 where
     F: Fn(char) -> bool,
 {
-    let mut s: String = String::new();
-
     while let Some(&c) = iter.peek() {
         if !cond(c) {
             break;
         }
 
-        s.push(c);
+        seed.push(c);
         iter.next();
     }
 
-    s
+    seed
 }
 
-fn to_f64(iter: &mut Peekable<Chars>) -> Result<f64, String> {
-    let mut num = take_while(iter, |c| c.is_numeric() || c == '.');
+fn to_f64(c: char, iter: &mut Peekable<Chars>) -> Result<f64, String> {
+    let mut num = accumulate(c.to_string(), iter, |c| c.is_numeric() || c == '.');
 
     // differentiate between 9 * e (euler's number) and 9e9
     let mut mul_euler = false;
@@ -161,7 +158,7 @@ fn to_f64(iter: &mut Peekable<Chars>) -> Result<f64, String> {
             }
 
             // accept more e & . to invalidate expressions like 9e9e9 or 9e9.9
-            num.push_str(&take_while(iter, |c| {
+            num.push_str(&accumulate(String::new(), iter, |c| {
                 c.is_numeric() || c == 'e' || c == '.'
             }))
         } else {
@@ -185,11 +182,8 @@ fn tokenize(expr: &str) -> Result<Vec<Token>, String> {
 
     let mut iter = expr.chars().peekable();
 
-    while let Some(&c) = iter.peek() {
-        // skip whitespace
+    while let Some(c) = iter.next() {
         if c.is_whitespace() {
-            iter.next();
-
             continue;
         }
 

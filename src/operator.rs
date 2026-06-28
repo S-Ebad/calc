@@ -1,5 +1,3 @@
-use std::{iter::Peekable, str::Chars};
-
 use crate::err_fmt;
 
 macro_rules! to_bool {
@@ -39,60 +37,28 @@ pub enum Operator {
     Or,
 }
 
-
-// simple helper
-fn is_next_token(iter: &mut Peekable<Chars>, val: Option<&char>) -> bool {
-    iter.next();
-
-    iter.peek() == val
-}
-
 impl Operator {
-    // get operator from char. last_token is needed for Unary
-    pub fn from(c: char, iter: &mut Peekable<Chars>) -> Option<Self> {
+    // get operator from char. next is needed for comparisons.
+    // Returns whether the operator and whether should consume lookahead or not
+    pub fn from(c: char, next: Option<char>) -> Option<(Self, bool)> {
         match c {
-            '&' if is_next_token(iter, Some(&'&')) => Some(Operator::And),
+            '&' if matches!(next, Some('&')) => Some((Operator::And, true)),
+            '|' if matches!(next, Some('|')) => Some((Operator::Or, true)),
+            '=' if matches!(next, Some('=')) => Some((Operator::IsEqual, true)),
+            '>' if matches!(next, Some('=')) => Some((Operator::GreaterEqual, true)),
+            '<' if matches!(next, Some('=')) => Some((Operator::LessEqual, true)),
+            '!' if matches!(next, Some('=')) => Some((Operator::NotEqual, true)),
 
-            '|' if is_next_token(iter, Some(&'|')) => Some(Operator::Or),
-
-            '=' => {
-                if is_next_token(iter, Some(&'=')) {
-                    Some(Operator::IsEqual)
-                } else {
-                    Some(Operator::Equal)
-                }
-            }
-
-            '>' => {
-                if is_next_token(iter, Some(&'=')) {
-                    Some(Operator::GreaterEqual)
-                } else {
-                    Some(Operator::GreaterThan)
-                }
-            }
-
-            '<' => {
-                if is_next_token(iter, Some(&'=')) {
-                    Some(Operator::LessEqual)
-                } else {
-                    Some(Operator::LessThan)
-                }
-            }
-
-            '!' => {
-                if is_next_token(iter, Some(&'=')) {
-                    Some(Operator::NotEqual)
-                } else {
-                    Some(Operator::Fac)
-                }
-            }
-
-            '+' => Some(Operator::Add),
-            '-' => Some(Operator::Sub),
-            '/' => Some(Operator::Div),
-            '*' => Some(Operator::Mul),
-            '^' => Some(Operator::Pow),
-            '%' => Some(Operator::Mod),
+            '=' => Some((Operator::Equal, false)),
+            '>' => Some((Operator::GreaterThan, false)),
+            '<' => Some((Operator::LessThan, false)),
+            '!' => Some((Operator::Fac, false)),
+            '+' => Some((Operator::Add, false)),
+            '-' => Some((Operator::Sub, false)),
+            '/' => Some((Operator::Div, false)),
+            '*' => Some((Operator::Mul, false)),
+            '^' => Some((Operator::Pow, false)),
+            '%' => Some((Operator::Mod, false)),
             _ => None,
         }
     }
