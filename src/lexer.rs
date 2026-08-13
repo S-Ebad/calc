@@ -15,6 +15,7 @@ pub enum Token {
 
     QuestionMark,
     Colon,
+    Dot,
 }
 
 #[derive(Debug)]
@@ -34,6 +35,7 @@ impl fmt::Display for Token {
             Token::RParen => ")",
             Token::QuestionMark => "?",
             Token::Colon => ":",
+            Token::Dot => ".",
             Token::Constant(constant) => &constant.to_string(),
         };
 
@@ -101,6 +103,7 @@ impl Token {
             ',' => Ok(Token::Comma),
             '?' => Ok(Token::QuestionMark),
             ':' => Ok(Token::Colon),
+            '.' => Ok(Token::Dot),
 
             _ => err_fmt!("Lexer Error: invalid token '{}'", c)?,
         }
@@ -112,6 +115,9 @@ impl Token {
             Token::LParen | Token::Identifier(_) | Token::Number(_) | Token::Constant(_) => {
                 Operator::ImplicitMul.bp().0 // Uses 11
             }
+
+            // bind as tight as postfix
+            Token::Dot => Operator::Fac.bp().0,
 
             //binds between Equal and everything else
             Token::QuestionMark => 1,
@@ -138,43 +144,52 @@ where
     seed
 }
 
+fn peek_at(iter: &Peekable<Chars>, offset: usize) -> Option<char> {
+    let mut lookahead = iter.clone();
+    for _ in 0..offset {
+        lookahead.next();
+    }
+
+    lookahead.next()
+}
+
 fn to_f64(c: char, iter: &mut Peekable<Chars>) -> Result<f64, String> {
-    let mut num = accumulate(c.to_string(), iter, |c| c.is_numeric() || c == '.');
+    let mut num = accumulate(c.to_string(), iter, |c| c.is_ascii_digit());
 
-    // differentiate between 9 * e (euler's number) and 9e9
-    let mut mul_euler = false;
-    if iter.peek() == Some(&'e') {
-        iter.next();
+    if iter.peek() == Some(&'.') && peek_at(iter, 1).is_some_and(|c| c.is_ascii_digit()) {
+        num.push(iter.next().unwrap()); // '.'
+        num.push_str(&accumulate(String::new(), iter, |c| c.is_ascii_digit()));
+    }
 
-        if iter
-            .peek()
-            .map(|c| c.is_numeric() || *c == '-')
-            .unwrap_or(false)
-        {
-            num.push('e');
+    if matches!(iter.peek(), Some('e' | 'E')) {
+        let sign_offset = if matches!(peek_at(iter, 1), Some('+' | '-')) {
+            2
+        } else {
+            1
+        };
 
-            if iter.peek() == Some(&'-') {
+        if peek_at(iter, sign_offset).is_some_and(|c| c.is_ascii_digit()) {
+            num.push(iter.next().unwrap()); // e/E
+
+            if matches!(iter.peek(), Some('+' | '-')) {
                 num.push(iter.next().unwrap());
             }
 
-            // accept more e & . to invalidate expressions like 9e9e9 or 9e9.9
-            num.push_str(&accumulate(String::new(), iter, |c| {
-                c.is_numeric() || c == 'e' || c == '.'
-            }))
-        } else {
-            mul_euler = true;
+            num.push_str(&accumulate(String::new(), iter, |c| c.is_ascii_digit()));
+
+            if let Some(bad @ ('e' | 'E')) = iter.peek() {
+                return Err(format!("Lexer Erorr: invalid number '{num}{bad}'"));
+            }
+
+            if iter.peek() == Some(&'.') && peek_at(iter, 1).is_some_and(|c| c.is_ascii_digit()) {
+                let dot = iter.next().unwrap();
+                return Err(format!("Lexer Error: invalid number: '{num}{dot}'"));
+            }
         }
     }
 
-    let result = num
-        .parse::<f64>()
-        .map_err(|_| format!("Lexer Error: invalid number '{}'", num));
-
-    if mul_euler {
-        Ok(result? * std::f64::consts::E)
-    } else {
-        result
-    }
+    num.parse::<f64>()
+        .map_err(|_| format!("Lexer Error: invalid number '{num}'"))
 }
 
 fn tokenize(expr: &str) -> Result<Vec<Token>, String> {

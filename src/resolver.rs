@@ -6,8 +6,12 @@ use std::{borrow::Borrow, collections::HashMap, hash::Hash};
 
 #[macro_export]
 macro_rules! err_fmt {
-    ($fmt:expr, $($arg:expr),* $(,)?) => {
+    ($fmt:literal, $($arg:expr),* $(,)?) => {
         Err(format!($fmt, $($arg),*))
+    };
+
+    ($fmt:expr) => {
+        Err($fmt.to_string())
     };
 }
 
