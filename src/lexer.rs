@@ -157,7 +157,8 @@ fn to_f64(iter: &mut Peekable<Chars>) -> Result<f64, String> {
     let mut num = take_while(iter, |c| c.is_ascii_digit());
 
     if iter.peek() == Some(&'.') && peek_at(iter, 1).is_some_and(|c| c.is_ascii_digit()) {
-        num.push_str(&take_while(iter, |c| c.is_ascii_digit() || c == '.'))
+        num.push(iter.next().unwrap()); // '.'
+        num.push_str(&take_while(iter, |c| c.is_ascii_digit()));
     }
 
     if matches!(iter.peek(), Some('e' | 'E')) {
