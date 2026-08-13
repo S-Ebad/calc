@@ -129,10 +129,7 @@ impl Token {
 }
 
 // take_while but doesn't consume an extra element
-fn take_while<F>(iter: &mut Peekable<Chars>, cond: F) -> String
-where
-    F: Fn(char) -> bool,
-{
+fn take_while(iter: &mut Peekable<Chars>, cond: impl Fn(char) -> bool) -> String {
     let mut s: String = String::new();
 
     while let Some(&c) = iter.peek() {
@@ -147,37 +144,46 @@ where
     s
 }
 
-fn to_f64(iter: &mut Peekable<Chars>) -> Result<f64, String> {
-    let mut num = take_while(iter, |c| c.is_ascii_digit() || c == '.');
-
+fn peek_at(iter: &Peekable<Chars>, offset: usize) -> Option<char> {
     let mut lookahead = iter.clone();
-    let is_exponent = if matches!(lookahead.peek(), Some('e' | 'E')) {
+    for _ in 0..offset {
         lookahead.next();
+    }
 
-        if matches!(lookahead.peek(), Some('-' | '+')) {
-            lookahead.next();
-        }
+    lookahead.next()
+}
 
-        matches!(lookahead.peek(), Some(c) if c.is_ascii_digit())
-    } else {
-        false
-    };
+fn to_f64(iter: &mut Peekable<Chars>) -> Result<f64, String> {
+    let mut num = take_while(iter, |c| c.is_ascii_digit());
 
-    if is_exponent {
-        num.push(iter.next().unwrap()); // 'e'
+    if iter.peek() == Some(&'.') && peek_at(iter, 1).is_some_and(|c| c.is_ascii_digit()) {
+        num.push_str(&take_while(iter, |c| c.is_ascii_digit() || c == '.'))
+    }
 
-        if matches!(iter.peek(), Some('-') | Some('+')) {
-            num.push(iter.next().unwrap());
-        }
+    if matches!(iter.peek(), Some('e' | 'E')) {
+        let sign_offset = if matches!(peek_at(iter, 1), Some('+' | '-')) {
+            2
+        } else {
+            1
+        };
 
-        num.push_str(&take_while(iter, |c| c.is_ascii_digit()));
+        if peek_at(iter, sign_offset).is_some_and(|c| c.is_ascii_digit()) {
+            num.push(iter.next().unwrap()); // e/E
 
-        // things like 9e9e9 or 9e9.2 which are invalid
-        if matches!(iter.peek(), Some('e' | '.' | 'E')) {
-            return Err(format!(
-                "Lexer Error: invalid number '{num}{}'",
-                iter.peek().unwrap()
-            ));
+            if matches!(iter.peek(), Some('+' | '-')) {
+                num.push(iter.next().unwrap());
+            }
+
+            num.push_str(&take_while(iter, |c| c.is_ascii_digit()));
+
+            if let Some(bad @ ('e' | 'E')) = iter.peek() {
+                return Err(format!("Lexer Erorr: invalid number '{num}{bad}'"));
+            }
+
+            if iter.peek() == Some(&'.') && peek_at(iter, 1).is_some_and(|c| c.is_ascii_digit()) {
+                let dot = iter.next().unwrap();
+                return Err(format!("Lexer Error: invalid number: '{num}{dot}'"));
+            }
         }
     }
 
