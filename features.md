@@ -187,3 +187,30 @@ This restriction does not apply to variables, a variable name can be reused as a
 > f(x)
 = 20
 ```
+
+## UFCS (Uniform Function Call Syntax)
+Any value can call a function as if it were a method, with the value passed as the first argument: `value.f(rest, of, args)` is equivalent to `f(value, rest, of, args)`.
+
+```
+> f(x) = 2x
+
+> 5.f()
+= 10
+
+> g(x, y) = x + y
+
+> 5.g(3)
+= 8
+
+> g(x) = x + 1
+
+5.f().g()
+= 11
+```
+
+The lexer is careful to distinguish a decimal point from a UFCS dot, `10.5.max(3)` parses `10.5` as the number, then `.max(3)` as a method call, rather than getting confused by the second `.`:
+```
+sqrt 10.5.max(3)
+= 3.24
+```
+

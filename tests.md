@@ -40,3 +40,6 @@ Covers `check_errors()`, blocks redefinition of ans, constants (pi, e, inf, true
 
 ### User Functions
 Covers definition and invocation, multi-parameter functions, function redefinition, nested user function calls, functions referencing global variables, dynamic scoping (global variable changes affect function output at call time), arity mismatch errors (too few and too many args), illegal parameter definitions, implicit multiplication with user functions (`f5`, `2f5`), and function composition (`f(g(x))`).
+
+### UFCS
+Covers basic method-style calls on integer and float literals (`10.max(5)`), no-arg calls (`9.sqrt()`), chained calls (`10.max(5).min(3)`), correct disambiguation between decimal points and method dots (`10.5.max(5)` still parses `10.5` as the number), exponent literals followed by a call (`9e2.max(5)`), UFCS with user-defined functions (including multi-arg and chained), and error cases for malformed numbers that were previously masked by greedy dot/exponent consumption (`10.`, `9e9e9`, `9e9.2`).
