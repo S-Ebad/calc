@@ -1,5 +1,6 @@
 pub mod calc;
 pub mod constant;
+pub mod errors;
 pub mod expr;
 pub mod function;
 pub mod lexer;
