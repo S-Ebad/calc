@@ -4,10 +4,27 @@ pub struct Span {
     end: usize,
 }
 
+impl Span {
+    pub fn new(start: usize, end: usize) -> Self {
+        Self { start, end }
+    }
+}
+
 #[derive(Debug)]
 pub enum LexerErrorKind {
     InvalidToken(char),
     InvalidNumber(String),
+}
+
+trait Diagnostic {
+    fn span(&self) -> &Span;
+    fn message(&self) -> String;
+    fn note(&self) -> Option<String> {
+        None
+    }
+    fn prefix(&self) -> &'static str {
+        "Error"
+    }
 }
 
 #[derive(Debug)]
@@ -32,12 +49,6 @@ impl LexerError {
             span,
             note: Some(note.to_owned()),
         }
-    }
-}
-
-impl Span {
-    pub fn new(start: usize, end: usize) -> Self {
-        Self { start, end }
     }
 }
 
@@ -85,19 +96,47 @@ impl Diagnostic for LexerError {
     }
 }
 
-trait Diagnostic {
-    fn span(&self) -> &Span;
-    fn message(&self) -> String;
+pub enum ParseErrorKind {}
+
+pub struct ParseError {
+    kind: ParseErrorKind,
+    span: Span,
+    note: Option<String>,
+}
+
+impl ParseError {
+    pub fn new(kind: ParseErrorKind, span: Span) -> Self {
+        Self {
+            kind,
+            span,
+            note: None,
+        }
+    }
+}
+
+impl Diagnostic for ParseError {
+    fn span(&self) -> &Span {
+        &self.span
+    }
+
+    fn message(&self) -> String {
+        #[allow(clippy::match_single_binding)]
+        match &self.kind {
+            _ => todo!()
+        }
+    }
+
     fn note(&self) -> Option<String> {
         None
     }
+
     fn prefix(&self) -> &'static str {
-        "Error"
+        "Parse Error"
     }
 }
 
 #[allow(private_bounds)]
-pub fn render_error(src: &str, err: impl Diagnostic + std::fmt::Debug) -> String {
+pub fn render_error(src: &str, err: impl Diagnostic) -> String {
     let span = err.span();
     let prefix = err.prefix();
     let message = err.message();
