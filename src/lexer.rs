@@ -1,7 +1,10 @@
 use std::{fmt, ops::Deref};
 
 use crate::{
-    constant::Constant, err_fmt, errors::Span, function::Function, operator::Operator,
+    constant::Constant,
+    errors::{LexerError, LexerErrorKind, Span, render_error},
+    function::Function,
+    operator::Operator,
     poschars::PosChars,
 };
 
@@ -78,10 +81,14 @@ impl Token {
 
 impl Lexer {
     pub fn new(src: &str) -> Result<Self, String> {
-        let mut tokens = tokenize(src)?;
-        tokens.reverse();
+        match tokenize(src) {
+            Ok(mut tokens) => {
+                tokens.reverse();
+                Ok(Lexer { tokens })
+            }
 
-        Ok(Lexer { tokens })
+            Err(err) => Err(render_error(src, err)),
+        }
     }
 
     pub fn peek(&mut self) -> Option<&TokenKind> {
@@ -102,7 +109,7 @@ impl Iterator for Lexer {
 }
 
 impl TokenKind {
-    pub fn from<I>(c: char, iter: &mut PosChars<I>) -> Result<Self, String>
+    pub fn from<I>(c: char, start: usize, iter: &mut PosChars<I>) -> Result<Self, LexerError>
     where
         I: Iterator<Item = char> + Clone,
     {
@@ -115,7 +122,7 @@ impl TokenKind {
         }
 
         if c.is_ascii_digit() {
-            return Ok(TokenKind::Number(to_f64(c, iter)?));
+            return Ok(TokenKind::Number(to_f64(c, start, iter)?));
         }
 
         if c.is_alphabetic() {
@@ -142,7 +149,10 @@ impl TokenKind {
             ':' => Ok(TokenKind::Colon),
             '.' => Ok(TokenKind::Dot),
 
-            _ => err_fmt!("Lexer Error: invalid token '{}'", c)?,
+            _ => Err(LexerError::new(
+                LexerErrorKind::InvalidToken(c),
+                Span::new(start, start),
+            )),
         }
     }
 
@@ -197,7 +207,7 @@ where
     lookahead.next()
 }
 
-fn to_f64<I>(c: char, iter: &mut PosChars<I>) -> Result<f64, String>
+fn to_f64<I>(c: char, start: usize, iter: &mut PosChars<I>) -> Result<f64, LexerError>
 where
     I: Iterator<Item = char> + Clone,
 {
@@ -224,22 +234,58 @@ where
 
             num.push_str(&accumulate(String::new(), iter, |c| c.is_ascii_digit()));
 
-            if let Some(bad @ ('e' | 'E')) = iter.peek() {
-                return Err(format!("Lexer Erorr: invalid number '{num}{bad}'"));
+            if let Some('e' | 'E') = iter.peek() {
+                let exp_offset = iter.pos();
+
+                // consume the entire "number" so we can give an accurate error
+                num.push_str(&accumulate(String::new(), iter, |c| {
+                    c.is_ascii_digit() || c == 'E' || c == 'e' || c == '+' || c == '-' || c == '.'
+                }));
+
+                let end = iter.pos();
+                let span = Span::new(exp_offset, end);
+                let kind = LexerErrorKind::InvalidNumber(num);
+
+                return Err(LexerError::with_note(
+                    kind,
+                    span,
+                    "numbers can only have one exponent",
+                ));
             }
 
+            // catches decimal points AFTER e
             if iter.peek() == Some(&'.') && peek_at(iter, 1).is_some_and(|c| c.is_ascii_digit()) {
-                let dot = iter.next().unwrap();
-                return Err(format!("Lexer Error: invalid number: '{num}{dot}'"));
+                let dot_offset = iter.pos();
+
+                // consume the entire "number" so we can give an accurate error
+                num.push_str(&accumulate(String::new(), iter, |c| {
+                    c.is_ascii_digit() || c == 'E' || c == 'e' || c == '+' || c == '-' || c == '.'
+                }));
+
+                let end = iter.pos();
+                let span = Span::new(dot_offset, end);
+                let kind = LexerErrorKind::InvalidNumber(num);
+
+                return Err(LexerError::with_note(
+                    kind,
+                    span,
+                    "exponent cannot contain a decimal point",
+                ));
             }
         }
     }
 
-    num.parse::<f64>()
-        .map_err(|_| format!("Lexer Error: invalid number '{num}'"))
+    num.parse::<f64>().map_err(|_| {
+        let end = iter.pos();
+        let span = Span::new(start, end);
+
+        let kind = LexerErrorKind::InvalidNumber(num);
+
+        LexerError::new(kind, span)
+    })
 }
 
-fn tokenize(expr: &str) -> Result<Vec<Token>, String> {
+fn tokenize(expr: &str) -> Result<Vec<Token>, LexerError> {
     let mut tokens = Vec::<Token>::new();
     let mut iter = crate::poschars::PosChars::new(expr.chars().peekable());
 
@@ -248,11 +294,14 @@ fn tokenize(expr: &str) -> Result<Vec<Token>, String> {
             continue;
         }
 
-        let start = iter.pos();
-        let token = TokenKind::from(c, &mut iter)?;
+        let start = iter.pos() - 1;
+        let token = TokenKind::from(c, start, &mut iter)?;
         let end = iter.pos();
 
-        tokens.push(Token { kind: token, span: Span::new(start, end) });
+        tokens.push(Token {
+            kind: token,
+            span: Span::new(start, end),
+        });
     }
 
     Ok(tokens)
