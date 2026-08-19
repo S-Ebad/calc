@@ -4,6 +4,7 @@ pub mod expr;
 pub mod function;
 pub mod lexer;
 pub mod operator;
+pub mod poschars;
 pub mod raw_expr;
 pub mod resolver;
 pub mod user_function;
