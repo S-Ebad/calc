@@ -2,7 +2,7 @@ use crate::{
     constant::Constant,
     err_fmt,
     function::Function,
-    lexer::{Lexer, Token},
+    lexer::{Lexer, TokenKind},
     operator::Operator,
     user_function::UserFunction,
     write_args,
@@ -60,14 +60,14 @@ fn consume_args(
     funcs: &HashMap<String, UserFunction>,
 ) -> Result<Vec<RawExpr>, String> {
     // no parenthesis. i.e: sin10
-    if lexer.peek() != Some(&Token::LParen) {
+    if lexer.peek() != Some(&TokenKind::LParen) {
         return Ok(vec![nud(lexer, funcs)?]);
     }
 
     lexer.next();
 
     // empty arguments. i.e: sin()
-    if lexer.peek() == Some(&Token::RParen) {
+    if lexer.peek() == Some(&TokenKind::RParen) {
         lexer.next();
         return Ok(vec![]);
     }
@@ -77,14 +77,14 @@ fn consume_args(
     loop {
         args.push(parse_expression(lexer, 0, funcs)?);
 
-        if lexer.peek() == Some(&Token::Comma) {
+        if lexer.peek() == Some(&TokenKind::Comma) {
             lexer.next();
         } else {
             break;
         }
     }
 
-    if !matches!(lexer.next(), Some(Token::RParen)) {
+    if !matches!(lexer.next(), Some(TokenKind::RParen)) {
         return Err("Parse Error: missing closing parenthesis ')'".to_string());
     }
 
@@ -93,17 +93,17 @@ fn consume_args(
 
 fn nud(lexer: &mut Lexer, funcs: &HashMap<String, UserFunction>) -> Result<RawExpr, String> {
     let expr = match lexer.next() {
-        Some(Token::Number(num)) => RawExpr::Number(num),
-        Some(Token::Constant(constant)) => RawExpr::Constant(constant),
-        Some(Token::Identifier(name)) => {
+        Some(TokenKind::Number(num)) => RawExpr::Number(num),
+        Some(TokenKind::Constant(constant)) => RawExpr::Constant(constant),
+        Some(TokenKind::Identifier(name)) => {
             let is_func = Function::from(&name).is_some()
                 || funcs.contains_key(&name)
-                || lexer.peek() == Some(&Token::LParen);
+                || lexer.peek() == Some(&TokenKind::LParen);
 
             if !is_func {
                 RawExpr::Identifier(name)
             } else {
-                if matches!(lexer.peek(), Some(Token::Comma | Token::RParen)) {
+                if matches!(lexer.peek(), Some(TokenKind::Comma | TokenKind::RParen)) {
                     return err_fmt!("Parse Error: '{}' is a function, not a value", name);
                 }
 
@@ -119,17 +119,17 @@ fn nud(lexer: &mut Lexer, funcs: &HashMap<String, UserFunction>) -> Result<RawEx
             }
         }
 
-        Some(Token::LParen) => {
+        Some(TokenKind::LParen) => {
             let lhs: RawExpr = parse_expression(lexer, 0, funcs)?;
 
-            if lexer.next() != Some(Token::RParen) {
+            if lexer.next() != Some(TokenKind::RParen) {
                 return Err("Parse Error: missing closing parenthesis ')'".to_string());
             }
 
             lhs
         }
 
-        Some(Token::Operator(op @ (Operator::Sub | Operator::Add))) => {
+        Some(TokenKind::Operator(op @ (Operator::Sub | Operator::Add))) => {
             let unary = if op == Operator::Sub {
                 Operator::Neg
             } else {
@@ -159,12 +159,12 @@ fn led(
 ) -> Result<RawExpr, String> {
     let expr = match lexer.peek() {
         // Expression is done. Stop parsing
-        Some(Token::RParen | Token::Comma) => lhs,
-        Some(Token::Dot) => {
+        Some(TokenKind::RParen | TokenKind::Comma) => lhs,
+        Some(TokenKind::Dot) => {
             lexer.next();
 
             let name = match lexer.next() {
-                Some(Token::Identifier(name)) => name,
+                Some(TokenKind::Identifier(name)) => name,
                 Some(other) => return err_fmt!("Parse Error: expected method name after '.', got {}", other),
                 None => return err_fmt!("Parse Error: expected method name after '.', got Nothing"),
             };
@@ -182,9 +182,9 @@ fn led(
         }
 
         Some(
-            token @ (Token::LParen | Token::Identifier(_) | Token::Number(_) | Token::Constant(_)),
+            token @ (TokenKind::LParen | TokenKind::Identifier(_) | TokenKind::Number(_) | TokenKind::Constant(_)),
         ) => {
-            if matches!(token, &Token::Number(_)) && matches!(lhs, RawExpr::Number(_)) {
+            if matches!(token, &TokenKind::Number(_)) && matches!(lhs, RawExpr::Number(_)) {
                 return Err("Parse Error: missing operator between expression".to_string());
             }
 
@@ -199,11 +199,11 @@ fn led(
             }
         }
 
-        Some(Token::QuestionMark) => {
+        Some(TokenKind::QuestionMark) => {
             lexer.next();
 
             let then = parse_expression(lexer, 0, funcs)?;
-            if lexer.next() != Some(Token::Colon) {
+            if lexer.next() != Some(TokenKind::Colon) {
                 return Err("Parse Error: expected colon ':' after '?' ".to_string());
             }
 
@@ -216,7 +216,7 @@ fn led(
             }
         }
 
-        Some(Token::Operator(op)) => {
+        Some(TokenKind::Operator(op)) => {
             let op = *op;
             lexer.next();
 
@@ -273,7 +273,7 @@ impl RawExpr {
         let expr = parse_expression(&mut lexer, 0, funcs)?;
 
         if let Some(token) = lexer.peek() {
-            return Err(if matches!(token, Token::RParen) {
+            return Err(if matches!(token, TokenKind::RParen) {
                 "Parse Error: unexpected closing parenthesis ')'".to_string()
             } else {
                 format!("Parse Error: unexpected token: {}", token)
