@@ -135,7 +135,7 @@ impl Expr {
                     scope.entry(key.borrow()).or_insert(*val);
                 }
 
-                let new_body = func_body.clone().resolve(&scope, funcs)?;
+                let new_body = func_body.resolve(&scope, funcs)?;
                 let result = new_body.eval(&scope, funcs, cache, depth+1)?;
                 cache.insert(key, result);
 

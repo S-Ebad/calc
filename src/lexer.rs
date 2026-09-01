@@ -26,8 +26,8 @@ pub enum TokenKind {
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct Token {
-    kind: TokenKind,
-    span: Span,
+    pub(crate) kind: TokenKind,
+    pub(crate) span: Span,
 }
 
 #[derive(Debug)]
@@ -91,8 +91,16 @@ impl Lexer {
         }
     }
 
-    pub fn peek(&mut self) -> Option<&TokenKind> {
+    pub fn peek(&self) -> Option<&TokenKind> {
         self.tokens.last().map(|token| &token.kind)
+    }
+
+    pub fn peek_token(&self) -> Option<&Token> {
+        self.tokens.last()
+    }
+
+    pub fn next_token(&mut self) -> Option<Token> {
+        self.tokens.pop()
     }
 
     pub fn is_empty(&self) -> bool {

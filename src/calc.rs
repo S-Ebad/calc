@@ -3,8 +3,7 @@ use strum::IntoEnumIterator;
 use crate::constant::Constant;
 use crate::function::Function;
 use crate::lexer::Lexer;
-use crate::operator::Operator;
-use crate::raw_expr::RawExpr;
+use crate::raw_expr::{RawExpr, RawExprKind};
 use crate::user_function::UserFunction;
 
 use std::collections::HashMap;
@@ -84,7 +83,10 @@ impl Calculator {
         } else if let Some(constant) = Constant::from(name) {
             constant.help()
         } else {
-            &format!("No help found for '{}'. Type 'help' to see available functions and constants.", name)
+            &format!(
+                "No help found for '{}'. Type 'help' to see available functions and constants.",
+                name
+            )
         };
 
         println!("{}", help_str);
@@ -99,7 +101,7 @@ impl Calculator {
             let rest = rest.trim();
 
             if Self::is_valid_help_name(rest) {
-                self.help(rest.trim());
+                self.help(rest);
 
                 return Ok(None);
             }
@@ -140,22 +142,37 @@ impl Calculator {
 
     fn classify(expr: RawExpr) -> Result<ExprKind, String> {
         match expr {
-            RawExpr::Binary {
-                op: Operator::Equal,
-                lhs,
-                rhs,
-            } => match *lhs {
-                RawExpr::Apply { name, args } | RawExpr::UserCall { name, args } => {
+            RawExpr {
+                kind:
+                    RawExprKind::Binary {
+                        op: crate::operator::Operator::Equal,
+                        lhs,
+                        rhs,
+                    },
+                span,
+            } => match &lhs.kind {
+                RawExprKind::Apply { .. } | RawExprKind::UserCall { .. } => {
+                    let (RawExprKind::Apply { name, args } | RawExprKind::UserCall { name, args }) =
+                        lhs.kind
+                    else {
+                        unreachable!()
+                    };
+
                     Ok(ExprKind::FuncDef(UserFunction::new(name, args, rhs)?))
                 }
 
-                RawExpr::Identifier(ident) => Ok(ExprKind::Assign(ident, *rhs)),
+                RawExprKind::Identifier(_) => {
+                    let RawExprKind::Identifier(ident) = lhs.kind else {
+                        unreachable!()
+                    };
 
-                lhs => Ok(ExprKind::Eval(RawExpr::Binary {
-                    op: Operator::Equal,
-                    lhs: Box::new(lhs),
-                    rhs,
-                })),
+                    Ok(ExprKind::Assign(ident, *rhs))
+                }
+
+                _ => Ok(ExprKind::Eval(RawExpr::new(
+                    RawExprKind::Binary { op: crate::operator::Operator::Equal, lhs, rhs },
+                    span,
+                ))),
             },
 
             other => Ok(ExprKind::Eval(other)),

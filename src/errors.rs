@@ -1,4 +1,4 @@
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub struct Span {
     start: usize,
     end: usize,
@@ -6,6 +6,13 @@ pub struct Span {
 
 impl Span {
     pub fn new(start: usize, end: usize) -> Self {
+        Self { start, end }
+    }
+
+    pub fn merge(self, b: Self) -> Self {
+        let start = self.start.min(b.start);
+        let end = self.end.max(b.end);
+
         Self { start, end }
     }
 }
@@ -96,7 +103,8 @@ impl Diagnostic for LexerError {
     }
 }
 
-pub enum ParseErrorKind {}
+pub enum ParseErrorKind {
+}
 
 pub struct ParseError {
     kind: ParseErrorKind,

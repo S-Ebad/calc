@@ -1,6 +1,5 @@
 use crate::{
-    expr::Expr, function::Function, operator::Operator, raw_expr::RawExpr,
-    user_function::UserFunction,
+    expr::Expr, function::Function, operator::Operator, raw_expr::{RawExpr, RawExprKind}, user_function::UserFunction,
 };
 use std::{borrow::Borrow, collections::HashMap, hash::Hash};
 
@@ -34,9 +33,9 @@ impl RawExpr {
     where
         K: Borrow<str> + Hash + Eq,
     {
-        let expr = match self {
-            RawExpr::Number(n) => Expr::Number(n),
-            RawExpr::Binary { op, lhs, rhs } => {
+        let expr = match self.kind {
+            RawExprKind::Number(n) => Expr::Number(n),
+            RawExprKind::Binary { op, lhs, rhs } => {
                 let lhs = lhs.resolve(vars, funcs)?;
                 let rhs = rhs.resolve(vars, funcs)?;
 
@@ -46,7 +45,7 @@ impl RawExpr {
                     rhs: Box::new(rhs),
                 }
             }
-            RawExpr::Unary { op, expr } => {
+            RawExprKind::Unary { op, expr } => {
                 let expr = expr.resolve(vars, funcs)?;
 
                 Expr::Unary {
@@ -54,7 +53,7 @@ impl RawExpr {
                     expr: Box::new(expr),
                 }
             }
-            RawExpr::Postfix { op, expr } => {
+            RawExprKind::Postfix { op, expr } => {
                 let expr = expr.resolve(vars, funcs)?;
 
                 Expr::Postfix {
@@ -62,7 +61,7 @@ impl RawExpr {
                     expr: Box::new(expr),
                 }
             }
-            RawExpr::Apply { name, mut args } => {
+            RawExprKind::Apply { name, mut args } => {
                 if let Some(var) = vars.get(&name).cloned() {
                     if args.len() != 1 {
                         return err_fmt!(
@@ -110,7 +109,7 @@ impl RawExpr {
                 }
             }
 
-            RawExpr::If {
+            RawExprKind::If {
                 condition,
                 then,
                 else_,
@@ -125,14 +124,14 @@ impl RawExpr {
                     else_: Box::new(else_),
                 }
             }
-            RawExpr::Identifier(ident) => {
+            RawExprKind::Identifier(ident) => {
                 if let Some(var) = vars.get(&ident).cloned() {
                     Expr::Number(var)
                 } else {
                     return err_ident!(ident);
                 }
             }
-            RawExpr::Call { func, args } => Expr::Call {
+            RawExprKind::Call { func, args } => Expr::Call {
                 func,
                 args: args
                     .into_iter()
@@ -140,7 +139,7 @@ impl RawExpr {
                     .collect::<Result<Vec<Expr>, _>>()?,
             },
 
-            RawExpr::UserCall { name, args } => {
+            RawExprKind::UserCall { name, args } => {
                 // arity mismatch
                 let func = funcs.get(&name).unwrap();
                 let func_params = func.params();
@@ -163,7 +162,7 @@ impl RawExpr {
                 }
             }
 
-            RawExpr::Constant(constant) => Expr::Number(constant.value()),
+            RawExprKind::Constant(constant) => Expr::Number(constant.value()),
         };
 
         Ok(expr)
