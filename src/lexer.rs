@@ -33,6 +33,7 @@ pub struct Token {
 #[derive(Debug)]
 pub struct Lexer {
     tokens: Vec<Token>,
+    src_len: usize,
 }
 
 impl fmt::Display for TokenKind {
@@ -84,7 +85,10 @@ impl Lexer {
         match tokenize(src) {
             Ok(mut tokens) => {
                 tokens.reverse();
-                Ok(Lexer { tokens })
+                Ok(Lexer {
+                    tokens,
+                    src_len: src.len(),
+                })
             }
 
             Err(err) => Err(render_error(src, err)),
@@ -105,6 +109,10 @@ impl Lexer {
 
     pub fn is_empty(&self) -> bool {
         self.tokens.is_empty()
+    }
+
+    pub fn end_pos(&self) -> usize {
+        self.src_len
     }
 }
 
@@ -159,7 +167,7 @@ impl TokenKind {
 
             _ => Err(LexerError::new(
                 LexerErrorKind::InvalidToken(c),
-                Span::new(start, start),
+                Some(Span::new(start, start)),
             )),
         }
     }
@@ -256,7 +264,7 @@ where
 
                 return Err(LexerError::with_note(
                     kind,
-                    span,
+                    Some(span),
                     "numbers can only have one exponent",
                 ));
             }
@@ -276,7 +284,7 @@ where
 
                 return Err(LexerError::with_note(
                     kind,
-                    span,
+                    Some(span),
                     "exponent cannot contain a decimal point",
                 ));
             }
@@ -289,7 +297,7 @@ where
 
         let kind = LexerErrorKind::InvalidNumber(num);
 
-        LexerError::new(kind, span)
+        LexerError::new(kind, Some(span))
     })
 }
 

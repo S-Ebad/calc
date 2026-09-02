@@ -1,6 +1,7 @@
 use strum::IntoEnumIterator;
 
 use crate::constant::Constant;
+use crate::errors::render_error;
 use crate::function::Function;
 use crate::lexer::Lexer;
 use crate::raw_expr::{RawExpr, RawExprKind};
@@ -108,7 +109,11 @@ impl Calculator {
         }
 
         let lexer = Lexer::new(buf)?;
-        let expr = RawExpr::parse(lexer, &self.funcs)?;
+        let expr = match RawExpr::parse(lexer, &self.funcs) {
+            Ok(k) => k,
+            Err(e) => return Err(render_error(buf, e)),
+        };
+
         expr.check_errors()?;
 
         let ans = match Self::classify(expr)? {

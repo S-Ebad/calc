@@ -1,3 +1,5 @@
+use crate::lexer::Token;
+
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub struct Span {
     start: usize,
@@ -24,10 +26,10 @@ pub enum LexerErrorKind {
 }
 
 trait Diagnostic {
-    fn span(&self) -> &Span;
+    fn span(&self) -> &Option<Span>;
     fn message(&self) -> String;
-    fn note(&self) -> Option<String> {
-        None
+    fn note(&self) -> &Option<String> {
+        &None
     }
     fn prefix(&self) -> &'static str {
         "Error"
@@ -37,12 +39,12 @@ trait Diagnostic {
 #[derive(Debug)]
 pub struct LexerError {
     kind: LexerErrorKind,
-    span: Span,
+    span: Option<Span>,
     note: Option<String>,
 }
 
 impl LexerError {
-    pub fn new(kind: LexerErrorKind, span: Span) -> Self {
+    pub fn new(kind: LexerErrorKind, span: Option<Span>) -> Self {
         Self {
             kind,
             span,
@@ -50,7 +52,7 @@ impl LexerError {
         }
     }
 
-    pub fn with_note(kind: LexerErrorKind, span: Span, note: &str) -> Self {
+    pub fn with_note(kind: LexerErrorKind, span: Option<Span>, note: &str) -> Self {
         Self {
             kind,
             span,
@@ -60,7 +62,7 @@ impl LexerError {
 }
 
 impl Diagnostic for LexerError {
-    fn span(&self) -> &Span {
+    fn span(&self) -> &Option<Span> {
         &self.span
     }
 
@@ -71,31 +73,8 @@ impl Diagnostic for LexerError {
         }
     }
 
-    fn note(&self) -> Option<String> {
-        if self.note.is_some() {
-            return self.note.clone();
-        }
-
-        match &self.kind {
-            LexerErrorKind::InvalidNumber(n) => {
-                let exp_count = n.matches(['e', 'E']).count();
-
-                let has_dot_after_exp = n
-                    .split(['e', 'E'])
-                    .nth(1)
-                    .is_some_and(|rest| rest.contains('.'));
-
-                if exp_count > 1 {
-                    Some("numbers can only have one exponent".into())
-                } else if has_dot_after_exp {
-                    Some("exponent cannot contain a decimal point".into())
-                } else {
-                    None
-                }
-            }
-
-            _ => None,
-        }
+    fn note(&self) -> &Option<String> {
+        &self.note
     }
 
     fn prefix(&self) -> &'static str {
@@ -103,39 +82,83 @@ impl Diagnostic for LexerError {
     }
 }
 
+#[derive(Debug)]
 pub enum ParseErrorKind {
+    EmptyExpression,
+    ExtraClosingParenthesis,
+    MissingClosingParenthesis,
+    UnexpectedEndOfInput,
+    MissingOperator,
+    ExpectedMethodName(Option<Token>),
+    ExpectedColonAfterQuestionMark,
+    TrailingComma,
+    CannotStartExpression(Token),
+    UnexpectedToken(Token),
+    FunctionUsedAsValue(String),
 }
 
+#[derive(Debug)]
 pub struct ParseError {
     kind: ParseErrorKind,
-    span: Span,
+    span: Option<Span>,
     note: Option<String>,
 }
 
 impl ParseError {
-    pub fn new(kind: ParseErrorKind, span: Span) -> Self {
+    pub fn new(kind: ParseErrorKind, span: Option<Span>) -> Self {
         Self {
             kind,
             span,
             note: None,
         }
     }
+
+    pub fn with_note(kind: ParseErrorKind, span: Option<Span>, note: String) -> Self {
+        Self {
+            kind,
+            span,
+            note: Some(note),
+        }
+    }
 }
 
 impl Diagnostic for ParseError {
-    fn span(&self) -> &Span {
+    fn span(&self) -> &Option<Span> {
         &self.span
     }
 
     fn message(&self) -> String {
-        #[allow(clippy::match_single_binding)]
         match &self.kind {
-            _ => todo!()
+            ParseErrorKind::EmptyExpression => "no expression to parse".to_string(),
+            ParseErrorKind::ExtraClosingParenthesis => {
+                "unexpected closing parenthesis ')'".to_string()
+            }
+
+            ParseErrorKind::UnexpectedToken(token) => format!("unexpected token: {}", token.kind),
+            ParseErrorKind::FunctionUsedAsValue(name) => {
+                format!("'{}' is a function, not a value", name)
+            }
+
+            ParseErrorKind::MissingClosingParenthesis => "unclosed parenthesis".to_string(),
+            ParseErrorKind::UnexpectedEndOfInput => "unexpected end of input".to_string(),
+            ParseErrorKind::CannotStartExpression(token) => {
+                format!("'{}' cannot start an expression", token.kind)
+            }
+
+            ParseErrorKind::MissingOperator => "missing operator between expressions".to_string(),
+
+            ParseErrorKind::ExpectedMethodName(token) => match token {
+                Some(token) => format!("expected method name after '.', got '{}'", token.kind),
+                None => "expected method name after '.', got nothing".to_string(),
+            },
+
+            ParseErrorKind::ExpectedColonAfterQuestionMark => "expected ':' after '?'".to_string(),
+            ParseErrorKind::TrailingComma => "trailing comma before ')'".to_string(),
         }
     }
 
-    fn note(&self) -> Option<String> {
-        None
+    fn note(&self) -> &Option<String> {
+        &self.note
     }
 
     fn prefix(&self) -> &'static str {
@@ -145,27 +168,32 @@ impl Diagnostic for ParseError {
 
 #[allow(private_bounds)]
 pub fn render_error(src: &str, err: impl Diagnostic) -> String {
-    let span = err.span();
     let prefix = err.prefix();
     let message = err.message();
-    let note = err.note();
+    let note = err.note().as_deref();
 
-    let line_start = src[..span.start].rfind('\n').map(|i| i + 1).unwrap_or(0);
-    let line_end = src[span.end..]
-        .find('\n')
-        .map(|i| span.end + i)
-        .unwrap_or(src.len());
+    let out;
+    if let Some(span) = err.span() {
+        let line_start = src[..span.start].rfind('\n').map(|i| i + 1).unwrap_or(0);
+        let line_end = src[span.end..]
+            .find('\n')
+            .map(|i| span.end + i)
+            .unwrap_or(src.len());
 
-    let line = &src[line_start..line_end];
+        let line = &src[line_start..line_end];
 
-    let col_start = span.start - line_start;
-    let col_end = span.end - line_start;
+        let col_start = span.start - line_start;
+        let col_end = span.end - line_start;
 
-    let indent = " ".repeat(col_start);
-    let carets = "^".repeat((col_end - col_start).max(1));
+        let indent = " ".repeat(col_start);
+        let carets = "^".repeat((col_end - col_start).max(1));
 
-    let note_str = note.map(|n| format!(" {n}")).unwrap_or_default();
-    let out = format!("{prefix}: {message}\n {line}\n {indent}{carets}{note_str}");
+        let note_str = note.map(|n| format!(" {n}")).unwrap_or_default();
+
+        out = format!("{prefix}: {message}\n {line}\n {indent}{carets}{note_str}");
+    } else {
+        out = format!("{prefix}: {message}");
+    }
 
     out
 }

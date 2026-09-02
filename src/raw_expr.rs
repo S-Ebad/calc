@@ -1,7 +1,7 @@
 use crate::{
     constant::Constant,
     err_fmt,
-    errors::Span,
+    errors::{ParseError, ParseErrorKind, Span, render_error},
     function::Function,
     lexer::{Lexer, Token, TokenKind},
     operator::Operator,
@@ -93,12 +93,23 @@ impl std::ops::Deref for RawExpr {
 fn consume_args(
     lexer: &mut Lexer,
     funcs: &HashMap<String, UserFunction>,
-) -> Result<Vec<RawExpr>, String> {
+) -> Result<Vec<RawExpr>, ParseError> {
     // no parenthesis. i.e: sin10
-    if lexer.peek() != Some(&TokenKind::LParen) {
+    let open = lexer.peek_token();
+
+    let Some(open) = open else {
+        let span = Span::new(lexer.end_pos(), lexer.end_pos());
+        return Err(ParseError::new(
+            ParseErrorKind::UnexpectedEndOfInput,
+            Some(span),
+        ));
+    };
+
+    if !matches!(open.kind, TokenKind::LParen) {
         return Ok(vec![nud(lexer, funcs)?]);
     }
 
+    let open_span = open.span;
     lexer.next();
 
     // empty arguments. i.e: sin()
@@ -113,25 +124,38 @@ fn consume_args(
         args.push(parse_expression(lexer, 0, funcs)?);
 
         if lexer.peek() == Some(&TokenKind::Comma) {
-            lexer.next();
+            let comma = lexer.next_token();
+
+            // trailing comma
+            if matches!(lexer.peek(), Some(&TokenKind::RParen)) {
+                return Err(ParseError::with_note(
+                    ParseErrorKind::TrailingComma,
+                    Some(comma.unwrap().span),
+                    "remove the ',' or add another argument/parameter".to_string(),
+                ));
+            }
         } else {
             break;
         }
     }
 
     if !matches!(lexer.next(), Some(TokenKind::RParen)) {
-        return Err("Parse Error: missing closing parenthesis ')'".to_string());
+        return Err(ParseError::new(
+            ParseErrorKind::MissingClosingParenthesis,
+            Some(open_span),
+        ));
     }
 
     Ok(args)
 }
 
-fn nud(lexer: &mut Lexer, funcs: &HashMap<String, UserFunction>) -> Result<RawExpr, String> {
+fn nud(lexer: &mut Lexer, funcs: &HashMap<String, UserFunction>) -> Result<RawExpr, ParseError> {
     let expr = match lexer.next_token() {
         Some(Token {
             kind: TokenKind::Number(num),
             span,
         }) => RawExpr::new(RawExprKind::Number(num), span),
+
         Some(Token {
             kind: TokenKind::Constant(constant),
             span,
@@ -149,7 +173,10 @@ fn nud(lexer: &mut Lexer, funcs: &HashMap<String, UserFunction>) -> Result<RawEx
                 RawExprKind::Identifier(name)
             } else {
                 if matches!(lexer.peek(), Some(TokenKind::Comma | TokenKind::RParen)) {
-                    return err_fmt!("Parse Error: '{}' is a function, not a value", name);
+                    let note = format!("call it with parentheses, e.g. '{name}()'");
+                    let kind = ParseErrorKind::FunctionUsedAsValue(name);
+
+                    return Err(ParseError::with_note(kind, Some(span), note));
                 }
 
                 let args = consume_args(lexer, funcs)?;
@@ -182,7 +209,12 @@ fn nud(lexer: &mut Lexer, funcs: &HashMap<String, UserFunction>) -> Result<RawEx
                     RawExpr::new(lhs.kind, new_span)
                 }
 
-                _ => return Err("Parse Error: missing closing parenthesis ')'".to_string()),
+                _ => {
+                    return Err(ParseError::new(
+                        ParseErrorKind::MissingClosingParenthesis,
+                        Some(span),
+                    ));
+                }
             }
         }
 
@@ -207,8 +239,23 @@ fn nud(lexer: &mut Lexer, funcs: &HashMap<String, UserFunction>) -> Result<RawEx
             RawExpr::new(raw_expr_kind, span)
         }
 
-        Some(token) => return err_fmt!("Parse Error: '{}' Cannot start an expression", token.kind),
-        None => return Err("Parse Error: unexpected end of input".to_string()),
+        Some(token) => {
+            let span = token.span;
+
+            return Err(ParseError::new(
+                ParseErrorKind::CannotStartExpression(token),
+                Some(span),
+            ));
+        }
+
+        None => {
+            let span = Span::new(lexer.end_pos(), lexer.end_pos());
+            return Err(ParseError::with_note(
+                ParseErrorKind::UnexpectedEndOfInput,
+                Some(span),
+                "expected an expression after this".to_string(),
+            ));
+        }
     };
 
     Ok(expr)
@@ -218,7 +265,7 @@ fn led(
     lexer: &mut Lexer,
     lhs: RawExpr,
     funcs: &HashMap<String, UserFunction>,
-) -> Result<RawExpr, String> {
+) -> Result<RawExpr, ParseError> {
     let token = lexer.peek_token();
     let expr = match token {
         Some(Token {
@@ -233,14 +280,25 @@ fn led(
             let span = *span;
             lexer.next();
 
-            let name = match lexer.next() {
-                Some(TokenKind::Identifier(name)) => name,
+            let name = match lexer.next_token() {
+                Some(Token {
+                    kind: TokenKind::Identifier(name),
+                    ..
+                }) => name,
                 Some(other) => {
-                    return err_fmt!("Parse Error: expected method name after '.', got {}", other);
+                    let span = other.span;
+                    let kind = ParseErrorKind::ExpectedMethodName(Some(other));
+
+                    return Err(ParseError::new(kind, Some(span)));
                 }
 
                 None => {
-                    return err_fmt!("Parse Error: expected method name after '.', got nothing");
+                    let span = Span::new(lexer.end_pos(), lexer.end_pos());
+
+                    return Err(ParseError::new(
+                        ParseErrorKind::ExpectedMethodName(None),
+                        Some(span),
+                    ));
                 }
             };
 
@@ -264,10 +322,12 @@ fn led(
                 | TokenKind::Identifier(_)
                 | TokenKind::Number(_)
                 | TokenKind::Constant(_)),
-            span: _,
+            span,
         }) => {
             if matches!(token, TokenKind::Number(_)) && matches!(lhs.kind, RawExprKind::Number(_)) {
-                return Err("Parse Error: missing operator between expression".to_string());
+                let span = span.merge(*lhs.span());
+
+                return Err(ParseError::new(ParseErrorKind::MissingOperator, Some(span)));
             }
 
             let op = Operator::ImplicitMul;
@@ -286,13 +346,20 @@ fn led(
 
         Some(Token {
             kind: TokenKind::QuestionMark,
-            span: _,
+            span,
         }) => {
+            let span = *span;
             lexer.next();
 
             let then = parse_expression(lexer, 0, funcs)?;
             if lexer.next() != Some(TokenKind::Colon) {
-                return Err("Parse Error: expected colon ':' after '?' ".to_string());
+                let span = span.merge(*then.span());
+
+                return Err(ParseError::with_note(
+                    ParseErrorKind::ExpectedColonAfterQuestionMark,
+                    Some(span),
+                    "add a ':' followed by the else expression".into(),
+                ));
             }
 
             let else_ = parse_expression(lexer, 0, funcs)?;
@@ -350,7 +417,7 @@ fn parse_expression(
     lexer: &mut Lexer,
     min_bp: u8,
     funcs: &HashMap<String, UserFunction>,
-) -> Result<RawExpr, String> {
+) -> Result<RawExpr, ParseError> {
     let mut lhs = nud(lexer, funcs)?;
 
     while let Some(token) = lexer.peek() {
@@ -368,19 +435,26 @@ impl RawExpr {
     pub fn parse(
         mut lexer: Lexer,
         funcs: &HashMap<String, UserFunction>,
-    ) -> Result<RawExpr, String> {
+    ) -> Result<RawExpr, ParseError> {
         if lexer.is_empty() {
-            return Err("Parse Error: no expression to parse".to_string());
+            return Err(ParseError::new(ParseErrorKind::EmptyExpression, None));
         }
 
         let expr = parse_expression(&mut lexer, 0, funcs)?;
 
-        if let Some(token) = lexer.peek() {
-            return Err(if matches!(token, TokenKind::RParen) {
-                "Parse Error: unexpected closing parenthesis ')'".to_string()
+        if let Some(token) = lexer.next_token() {
+            let span;
+            let kind = if matches!(token.kind, TokenKind::RParen) {
+                span = token.span;
+
+                ParseErrorKind::ExtraClosingParenthesis
             } else {
-                format!("Parse Error: unexpected token: {}", token)
-            });
+                span = token.span;
+
+                ParseErrorKind::UnexpectedToken(token)
+            };
+
+            return Err(ParseError::new(kind, Some(span)));
         }
 
         Ok(expr)
