@@ -1,7 +1,6 @@
 use crate::{
     constant::Constant,
-    err_fmt,
-    errors::{ParseError, ParseErrorKind, Span, render_error},
+    errors::{ParseError, ParseErrorKind, Span},
     function::Function,
     lexer::{Lexer, Token, TokenKind},
     operator::Operator,
@@ -60,6 +59,12 @@ pub enum RawExprKind {
 pub struct RawExpr {
     pub(crate) kind: RawExprKind,
     pub(crate) span: Span,
+}
+
+pub enum Statement {
+    FuncDef(UserFunction),
+    Assign(String, RawExpr),
+    Eval(RawExpr),
 }
 
 impl RawExpr {
@@ -460,7 +465,7 @@ impl RawExpr {
         Ok(expr)
     }
 
-    pub fn check_errors(&self) -> Result<(), String> {
+    pub fn check_errors(&self) -> Result<(), ParseError> {
         if let RawExprKind::Binary {
             op: Operator::Equal,
             lhs,
@@ -472,24 +477,38 @@ impl RawExpr {
                     kind: RawExprKind::Apply { name, .. } | RawExprKind::Identifier(name),
                     ..
                 } if name == "ans" => {
-                    return Err("Parse Error: 'ans' is a reserved read-only variable".to_string());
+                    let kind = ParseErrorKind::InvalidAssignmentTarget("ans".into());
+
+                    return Err(ParseError::with_note(
+                        kind,
+                        Some(*lhs.span()),
+                        "'ans' always holds the last result and can't be reassigned".into(),
+                    ));
                 }
 
                 RawExpr {
                     kind: RawExprKind::Constant(constant),
                     ..
                 } => {
-                    return err_fmt!("Parse Error: attempt to redefine constant '{}'", constant);
+                    let kind = ParseErrorKind::InvalidAssignmentTarget(constant.to_string());
+
+                    return Err(ParseError::with_note(
+                        kind,
+                        Some(*lhs.span()),
+                        "constants can't be redefined".to_string(),
+                    ));
                 }
 
                 RawExpr {
                     kind: RawExprKind::Call { func, .. },
                     ..
                 } => {
-                    return err_fmt!(
-                        "Parse Error: attempt to redefine built-in function '{}'",
-                        func
-                    );
+                    let kind = ParseErrorKind::InvalidAssignmentTarget(func.to_string());
+                    return Err(ParseError::with_note(
+                        kind,
+                        Some(*lhs.span()),
+                        "built-in functions can't be redefined".to_string(),
+                    ));
                 }
 
                 _ => (),
@@ -497,6 +516,51 @@ impl RawExpr {
         }
 
         Ok(())
+    }
+
+    pub fn classify(self) -> Result<Statement, ParseError> {
+        match self {
+            RawExpr {
+                kind:
+                    RawExprKind::Binary {
+                        op: crate::operator::Operator::Equal,
+                        lhs,
+                        rhs,
+                    },
+                span,
+            } => match &lhs.kind {
+                RawExprKind::Apply { .. } | RawExprKind::UserCall { .. } => {
+                    let (RawExprKind::Apply { name, args } | RawExprKind::UserCall { name, args }) =
+                        lhs.kind
+                    else {
+                        unreachable!()
+                    };
+
+                    let function = UserFunction::new(name, args, rhs)?;
+
+                    Ok(Statement::FuncDef(function))
+                }
+
+                RawExprKind::Identifier(_) => {
+                    let RawExprKind::Identifier(ident) = lhs.kind else {
+                        unreachable!()
+                    };
+
+                    Ok(Statement::Assign(ident, *rhs))
+                }
+
+                _ => Ok(Statement::Eval(RawExpr::new(
+                    RawExprKind::Binary {
+                        op: crate::operator::Operator::Equal,
+                        lhs,
+                        rhs,
+                    },
+                    span,
+                ))),
+            },
+
+            other => Ok(Statement::Eval(other)),
+        }
     }
 }
 

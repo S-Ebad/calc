@@ -1,4 +1,4 @@
-use crate::lexer::Token;
+use crate::{lexer::Token, raw_expr::RawExpr};
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub struct Span {
@@ -89,9 +89,11 @@ pub enum ParseErrorKind {
     MissingClosingParenthesis,
     UnexpectedEndOfInput,
     MissingOperator,
+    InvalidParameter(RawExpr),
     ExpectedMethodName(Option<Token>),
     ExpectedColonAfterQuestionMark,
     TrailingComma,
+    InvalidAssignmentTarget(String),
     CannotStartExpression(Token),
     UnexpectedToken(Token),
     FunctionUsedAsValue(String),
@@ -154,6 +156,13 @@ impl Diagnostic for ParseError {
 
             ParseErrorKind::ExpectedColonAfterQuestionMark => "expected ':' after '?'".to_string(),
             ParseErrorKind::TrailingComma => "trailing comma before ')'".to_string(),
+            ParseErrorKind::InvalidAssignmentTarget(name) => {
+                format!("cannot assign to '{}'", name)
+            }
+            ParseErrorKind::InvalidParameter(raw_expr) => format!(
+                "function parameter must be an identifier, got '{}'",
+                raw_expr.kind
+            ),
         }
     }
 

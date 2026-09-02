@@ -1,6 +1,9 @@
 use std::fmt;
 
-use crate::{err_fmt, raw_expr::{RawExpr, RawExprKind}};
+use crate::{
+    errors::{ParseError, ParseErrorKind},
+    raw_expr::{RawExpr, RawExprKind},
+};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct UserFunction {
@@ -10,15 +13,21 @@ pub struct UserFunction {
 }
 
 impl UserFunction {
-    pub fn new(name: String, params: Vec<RawExpr>, body: Box<RawExpr>) -> Result<Self, String> {
+    pub fn new(name: String, params: Vec<RawExpr>, body: Box<RawExpr>) -> Result<Self, ParseError> {
         let params = params
             .into_iter()
             .map(|param| match param {
-                RawExpr{ kind: RawExprKind::Identifier(name), .. } => Ok(name),
-                other => err_fmt!(
-                    "Parse Error: function parameter must be an identifier, got '{}'",
-                    other.kind
-                ),
+                RawExpr {
+                    kind: RawExprKind::Identifier(name),
+                    ..
+                } => Ok(name),
+
+                other => {
+                    let span = other.span;
+                    let kind = ParseErrorKind::InvalidParameter(other);
+
+                    Err(ParseError::new(kind, Some(span)))
+                }
             })
             .collect::<Result<Vec<String>, _>>()?;
 

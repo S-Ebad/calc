@@ -4,7 +4,7 @@ use crate::constant::Constant;
 use crate::errors::render_error;
 use crate::function::Function;
 use crate::lexer::Lexer;
-use crate::raw_expr::{RawExpr, RawExprKind};
+use crate::raw_expr::{RawExpr, Statement};
 use crate::user_function::UserFunction;
 
 use std::collections::HashMap;
@@ -17,12 +17,6 @@ pub struct Calculator {
     vars: HashMap<String, f64>,
     funcs: HashMap<String, UserFunction>,
     cache: HashMap<CacheKey, f64>,
-}
-
-enum ExprKind {
-    FuncDef(UserFunction),
-    Assign(String, RawExpr),
-    Eval(RawExpr),
 }
 
 impl Calculator {
@@ -114,16 +108,23 @@ impl Calculator {
             Err(e) => return Err(render_error(buf, e)),
         };
 
-        expr.check_errors()?;
+        if let Err(e) = expr.check_errors() {
+            return Err(render_error(buf, e));
+        }
 
-        let ans = match Self::classify(expr)? {
-            ExprKind::FuncDef(user_function) => {
+        let stmt = match expr.classify() {
+            Ok(kind) => kind,
+            Err(e) => return Err(render_error(buf, e)),
+        };
+
+        let ans = match stmt {
+            Statement::FuncDef(user_function) => {
                 self.set_user_function(user_function);
 
                 return Ok(None);
             }
 
-            ExprKind::Assign(name, expr) => {
+            Statement::Assign(name, expr) => {
                 let expr = expr.resolve(&self.vars, &self.funcs)?;
 
                 let ans = expr.eval(&self.vars, &self.funcs, &mut self.cache, 0)?;
@@ -132,7 +133,7 @@ impl Calculator {
                 ans
             }
 
-            ExprKind::Eval(expr) => {
+            Statement::Eval(expr) => {
                 let expr = expr.resolve(&self.vars, &self.funcs)?;
 
                 expr.eval(&self.vars, &self.funcs, &mut self.cache, 0)?
@@ -143,45 +144,6 @@ impl Calculator {
         self.set_variable("ans", ans);
 
         Ok(Some(ans))
-    }
-
-    fn classify(expr: RawExpr) -> Result<ExprKind, String> {
-        match expr {
-            RawExpr {
-                kind:
-                    RawExprKind::Binary {
-                        op: crate::operator::Operator::Equal,
-                        lhs,
-                        rhs,
-                    },
-                span,
-            } => match &lhs.kind {
-                RawExprKind::Apply { .. } | RawExprKind::UserCall { .. } => {
-                    let (RawExprKind::Apply { name, args } | RawExprKind::UserCall { name, args }) =
-                        lhs.kind
-                    else {
-                        unreachable!()
-                    };
-
-                    Ok(ExprKind::FuncDef(UserFunction::new(name, args, rhs)?))
-                }
-
-                RawExprKind::Identifier(_) => {
-                    let RawExprKind::Identifier(ident) = lhs.kind else {
-                        unreachable!()
-                    };
-
-                    Ok(ExprKind::Assign(ident, *rhs))
-                }
-
-                _ => Ok(ExprKind::Eval(RawExpr::new(
-                    RawExprKind::Binary { op: crate::operator::Operator::Equal, lhs, rhs },
-                    span,
-                ))),
-            },
-
-            other => Ok(ExprKind::Eval(other)),
-        }
     }
 }
 
