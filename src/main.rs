@@ -1,4 +1,4 @@
-use calc::calc::Calculator;
+use calc::{calc::Calculator, errors::render_error};
 use rustyline::{DefaultEditor, error::ReadlineError};
 
 fn repl(mut calculator: Calculator) {
@@ -24,7 +24,7 @@ fn repl(mut calculator: Calculator) {
 
         match calculator.solve(&input) {
             Ok(Some(ans)) => println!("= {}", ans),
-            Err(err) => eprintln!("{}", err),
+            Err(err) => eprintln!("{}", render_error(&input, err)),
             Ok(None) => (), // for function definitions.
         }
 
@@ -44,7 +44,7 @@ fn main() {
                 Ok(Some(ans)) => println!(" = {}", ans),
                 Ok(None) => (),
                 Err(err) => {
-                    eprintln!("{}", err);
+                    eprintln!("{}", render_error(expr.as_ref(), err));
                     break;
                 }
             }

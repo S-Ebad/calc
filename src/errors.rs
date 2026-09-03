@@ -1,5 +1,64 @@
 use crate::{lexer::Token, raw_expr::RawExpr};
 
+#[derive(Debug)]
+pub enum CalcError {
+    Lexer(LexerError),
+    Parser(ParseError),
+    String(String), // Keeping this temporarily until ResolverError & EvalError are implemented
+}
+
+impl Diagnostic for CalcError {
+    fn span(&self) -> &Option<Span> {
+        match self {
+            CalcError::Lexer(l) => l.span(),
+            CalcError::Parser(p) => p.span(),
+            CalcError::String(_) => &None,
+        }
+    }
+
+    fn message(&self) -> String {
+        match self {
+            CalcError::Lexer(l) => l.message(),
+            CalcError::Parser(p) => p.message(),
+            CalcError::String(s) => s.to_owned(),
+        }
+    }
+
+    fn note(&self) -> &Option<String> {
+        match self {
+            CalcError::Lexer(l) => l.note(),
+            CalcError::Parser(p) => p.note(),
+            CalcError::String(_) => &None,
+        }
+    }
+
+    fn prefix(&self) -> &'static str {
+        match self {
+            CalcError::Lexer(l) => l.prefix(),
+            CalcError::Parser(p) => p.prefix(),
+            CalcError::String(_) => "",
+        }
+    }
+}
+
+impl From<LexerError> for CalcError {
+    fn from(value: LexerError) -> Self {
+        Self::Lexer(value)
+    }
+}
+
+impl From<ParseError> for CalcError {
+    fn from(value: ParseError) -> Self {
+        Self::Parser(value)
+    }
+}
+
+impl From<String> for CalcError {
+    fn from(value: String) -> Self {
+        Self::String(value)
+    }
+}
+
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub struct Span {
     start: usize,

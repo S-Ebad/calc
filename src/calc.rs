@@ -1,7 +1,7 @@
 use strum::IntoEnumIterator;
 
 use crate::constant::Constant;
-use crate::errors::render_error;
+use crate::errors::{CalcError};
 use crate::function::Function;
 use crate::lexer::Lexer;
 use crate::raw_expr::{RawExpr, Statement};
@@ -91,7 +91,7 @@ impl Calculator {
         s.is_empty() || s.chars().all(|c| c.is_alphabetic() || c == '_')
     }
 
-    pub fn solve(&mut self, buf: &str) -> Result<Option<f64>, String> {
+    pub fn solve(&mut self, buf: &str) -> Result<Option<f64>, CalcError> {
         if let Some(rest) = buf.strip_prefix("help") {
             let rest = rest.trim();
 
@@ -102,24 +102,11 @@ impl Calculator {
             }
         }
 
-        let lexer = match Lexer::new(buf) {
-            Ok(ok) => ok,
-            Err(e) => return Err(render_error(buf, e)),
-        };
+        let lexer = Lexer::new(buf)?;
+        let expr = RawExpr::parse(lexer, &self.funcs)?;
+        expr.check_errors()?;
 
-        let expr = match RawExpr::parse(lexer, &self.funcs) {
-            Ok(k) => k,
-            Err(e) => return Err(render_error(buf, e)),
-        };
-
-        if let Err(e) = expr.check_errors() {
-            return Err(render_error(buf, e));
-        }
-
-        let stmt = match expr.classify() {
-            Ok(kind) => kind,
-            Err(e) => return Err(render_error(buf, e)),
-        };
+        let stmt = expr.classify()?;
 
         let ans = match stmt {
             Statement::FuncDef(user_function) => {
