@@ -2,7 +2,7 @@ use std::{fmt, ops::Deref};
 
 use crate::{
     constant::Constant,
-    errors::{LexerError, LexerErrorKind, Span, render_error},
+    errors::{LexerError, LexerErrorKind, Span},
     function::Function,
     operator::Operator,
     poschars::PosChars,
@@ -81,18 +81,14 @@ impl Token {
 }
 
 impl Lexer {
-    pub fn new(src: &str) -> Result<Self, String> {
-        match tokenize(src) {
-            Ok(mut tokens) => {
-                tokens.reverse();
-                Ok(Lexer {
-                    tokens,
-                    src_len: src.len(),
-                })
-            }
+    pub fn new(src: &str) -> Result<Self, LexerError> {
+        let mut tokens = tokenize(src)?;
+        tokens.reverse();
 
-            Err(err) => Err(render_error(src, err)),
-        }
+        Ok(Self {
+            tokens,
+            src_len: src.len(),
+        })
     }
 
     pub fn peek(&self) -> Option<&TokenKind> {

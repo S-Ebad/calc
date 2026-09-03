@@ -102,7 +102,11 @@ impl Calculator {
             }
         }
 
-        let lexer = Lexer::new(buf)?;
+        let lexer = match Lexer::new(buf) {
+            Ok(ok) => ok,
+            Err(e) => return Err(render_error(buf, e)),
+        };
+
         let expr = match RawExpr::parse(lexer, &self.funcs) {
             Ok(k) => k,
             Err(e) => return Err(render_error(buf, e)),
