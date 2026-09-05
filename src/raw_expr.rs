@@ -214,7 +214,25 @@ fn nud(lexer: &mut Lexer, funcs: &HashMap<String, UserFunction>) -> Result<RawEx
                     RawExpr::new(lhs.kind, new_span)
                 }
 
-                _ => {
+                Some(other) if matches!(other.kind, TokenKind::Comma) => {
+                    let span = *other.span();
+                    let kind = ParseErrorKind::ExpectedClosingParenthesis(other);
+
+                    return Err(ParseError::with_note(
+                        kind,
+                        Some(span),
+                        "multiple expressions aren't supported".into(),
+                    ));
+                }
+
+                Some(other) => {
+                    let span = *other.span();
+                    let kind = ParseErrorKind::ExpectedClosingParenthesis(other);
+
+                    return Err(ParseError::new(kind, Some(span)));
+                }
+
+                None => {
                     return Err(ParseError::new(
                         ParseErrorKind::MissingClosingParenthesis,
                         Some(span),

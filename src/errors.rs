@@ -152,6 +152,7 @@ pub enum ParseErrorKind {
     ExpectedMethodName(Option<Token>),
     ExpectedColonAfterQuestionMark,
     TrailingComma,
+    ExpectedClosingParenthesis(Token),
     InvalidAssignmentTarget(String),
     CannotStartExpression(Token),
     UnexpectedToken(Token),
@@ -222,6 +223,9 @@ impl Diagnostic for ParseError {
                 "function parameter must be an identifier, got '{}'",
                 raw_expr.kind
             ),
+            ParseErrorKind::ExpectedClosingParenthesis(token) => {
+                format!("expected closing parenthesis, got '{}'", token.kind)
+            }
         }
     }
 
