@@ -43,6 +43,10 @@ impl UserFunction {
         &self.params
     }
 
+    pub fn arity(&self) -> usize {
+        self.params.len()
+    }
+
     pub fn body(&self) -> &RawExpr {
         &self.body
     }

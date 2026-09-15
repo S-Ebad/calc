@@ -85,7 +85,16 @@ impl RawExpr {
                         lhs: Box::new(lhs),
                         rhs: Box::new(rhs),
                     }
-                } else if funcs.contains_key(&name) {
+                } else if let Some(user_func) = funcs.get(&name) {
+                    if user_func.arity() != args.len() {
+                        return err_fmt!(
+                            "Resolver Error: function {} takes {} argument(s) but got {}",
+                            user_func,
+                            user_func.params().len(),
+                            args.len()
+                        );
+                    }
+
                     let resolved_args = args
                         .into_iter()
                         .map(|raw_expr| raw_expr.resolve(vars, funcs))
@@ -143,13 +152,12 @@ impl RawExpr {
             RawExpr::UserCall { name, args } => {
                 // arity mismatch
                 let func = funcs.get(&name).unwrap();
-                let func_params = func.params();
 
-                if func_params.len() != args.len() {
+                if func.arity() != args.len() {
                     return err_fmt!(
                         "Resolver Error: function {} takes {} argument(s) but got {}",
                         func,
-                        func_params.len(),
+                        func.arity(),
                         args.len()
                     );
                 }

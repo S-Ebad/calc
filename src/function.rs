@@ -104,6 +104,7 @@ impl Function {
                 format!("{}-{}", min, max)
             };
 
+            // TODO: move this to resolver. Why is this being checked during eval?
             return err_fmt!(
                 "Eval Error: function {} takes {} argument(s) but got {}",
                 self,
