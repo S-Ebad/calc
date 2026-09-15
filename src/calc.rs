@@ -1,7 +1,7 @@
 use strum::IntoEnumIterator;
 
 use crate::constant::Constant;
-use crate::errors::{CalcError};
+use crate::errors::CalcError;
 use crate::function::Function;
 use crate::lexer::Lexer;
 use crate::raw_expr::{RawExpr, Statement};

@@ -1,6 +1,9 @@
 use std::{borrow::Borrow, collections::HashMap, fmt};
 
-use crate::{calc::CacheKey, function::Function, operator::Operator, user_function::UserFunction};
+use crate::{
+    calc::CacheKey, errors::CalcError, function::Function, operator::Operator,
+    user_function::UserFunction,
+};
 
 #[macro_export]
 macro_rules! write_args {
@@ -66,13 +69,15 @@ impl Expr {
         funcs: &HashMap<String, UserFunction>,
         cache: &mut HashMap<CacheKey, f64>,
         depth: u32,
-    ) -> Result<f64, String>
+    ) -> Result<f64, CalcError>
+    // temporary CalcError until we get EvalError/RuntimeError
     where
         K: Borrow<str>,
     {
-
         if depth >= 100 {
-            return Err("Eval Error: recursion limit has been reached".to_string())
+            return Err(CalcError::String(
+                "Eval Error: recursion limit has been reached".to_string(),
+            ));
         }
 
         match self {
@@ -81,17 +86,21 @@ impl Expr {
                 let lhs = lhs.eval(vars, funcs, cache, depth)?;
                 let rhs = rhs.eval(vars, funcs, cache, depth)?;
 
-                op.perform_op(lhs, Some(rhs))
+                op.perform_op(lhs, Some(rhs)).map_err(CalcError::String)
             }
-            Expr::Unary { op, expr } => op.perform_op(expr.eval(vars, funcs, cache, depth)?, None),
-            Expr::Postfix { expr, op } => op.perform_op(expr.eval(vars, funcs, cache, depth)?, None),
+            Expr::Unary { op, expr } => op
+                .perform_op(expr.eval(vars, funcs, cache, depth)?, None)
+                .map_err(CalcError::String),
+            Expr::Postfix { expr, op } => op
+                .perform_op(expr.eval(vars, funcs, cache, depth)?, None)
+                .map_err(CalcError::String),
             Expr::Call { func, args } => {
                 let args = args
                     .into_iter()
                     .map(|expr| expr.eval(vars, funcs, cache, depth))
                     .collect::<Result<Vec<f64>, _>>()?;
 
-                func.call(&args)
+                func.call(&args).map_err(CalcError::String)
             }
 
             Expr::If {
@@ -122,7 +131,7 @@ impl Expr {
 
                 // cache hit
                 if let Some(num) = cache.get(&key) {
-                    return Ok(*num)
+                    return Ok(*num);
                 }
 
                 let mut scope = func_params
@@ -135,8 +144,9 @@ impl Expr {
                     scope.entry(key.borrow()).or_insert(*val);
                 }
 
+                // TODO: Later use EvalError::Resolution
                 let new_body = func_body.resolve(&scope, funcs)?;
-                let result = new_body.eval(&scope, funcs, cache, depth+1)?;
+                let result = new_body.eval(&scope, funcs, cache, depth + 1)?;
                 cache.insert(key, result);
 
                 Ok(result)

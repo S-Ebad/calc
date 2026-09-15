@@ -2,8 +2,9 @@ use crate::{lexer::Token, raw_expr::RawExpr};
 
 #[derive(Debug)]
 pub enum CalcError {
-    Lexer(LexerError),
-    Parser(ParseError),
+    Lexer(Box<LexerError>),
+    Parser(Box<ParseError>),
+    Resolver(Box<ResolverError>),
     String(String), // Keeping this temporarily until ResolverError & EvalError are implemented
 }
 
@@ -13,6 +14,7 @@ impl Diagnostic for CalcError {
             CalcError::Lexer(l) => l.span(),
             CalcError::Parser(p) => p.span(),
             CalcError::String(_) => &None,
+            CalcError::Resolver(r) => r.span(),
         }
     }
 
@@ -21,6 +23,7 @@ impl Diagnostic for CalcError {
             CalcError::Lexer(l) => l.message(),
             CalcError::Parser(p) => p.message(),
             CalcError::String(s) => s.to_owned(),
+            CalcError::Resolver(r) => r.message(),
         }
     }
 
@@ -29,6 +32,7 @@ impl Diagnostic for CalcError {
             CalcError::Lexer(l) => l.note(),
             CalcError::Parser(p) => p.note(),
             CalcError::String(_) => &None,
+            CalcError::Resolver(r) => r.note(),
         }
     }
 
@@ -37,19 +41,26 @@ impl Diagnostic for CalcError {
             CalcError::Lexer(l) => l.prefix(),
             CalcError::Parser(p) => p.prefix(),
             CalcError::String(_) => "",
+            CalcError::Resolver(r) => r.prefix(),
         }
     }
 }
 
 impl From<LexerError> for CalcError {
     fn from(value: LexerError) -> Self {
-        Self::Lexer(value)
+        Self::Lexer(Box::new(value))
     }
 }
 
 impl From<ParseError> for CalcError {
     fn from(value: ParseError) -> Self {
-        Self::Parser(value)
+        Self::Parser(Box::new(value))
+    }
+}
+
+impl From<ResolverError> for CalcError {
+    fn from(value: ResolverError) -> Self {
+        Self::Resolver(Box::new(value))
     }
 }
 
@@ -236,6 +247,92 @@ impl Diagnostic for ParseError {
     fn prefix(&self) -> &'static str {
         "Parse Error"
     }
+}
+
+#[derive(Debug)]
+pub enum ResolverErrorKind {
+    InvalidMultiplication {
+        target: String,
+        args: Vec<RawExpr>,
+    },
+
+    UnknownFunction(String),
+    UnknownIdentifier(String),
+    UndefinedAns, // when 'ans' is used as the first expression (no previous answer)
+    ArityMismatch {
+        name: String,
+        expected: usize,
+        got: usize,
+    },
+}
+
+#[derive(Debug)]
+pub struct ResolverError {
+    kind: ResolverErrorKind,
+    span: Option<Span>,
+    note: Option<String>,
+}
+
+impl ResolverError {
+    pub fn new(kind: ResolverErrorKind, span: Option<Span>) -> Self {
+        Self {
+            kind,
+            span,
+            note: None,
+        }
+    }
+
+    pub fn with_note(kind: ResolverErrorKind, span: Option<Span>, note: String) -> Self {
+        Self {
+            kind,
+            span,
+            note: Some(note),
+        }
+    }
+}
+
+impl Diagnostic for ResolverError {
+    fn span(&self) -> &Option<Span> {
+        &self.span
+    }
+
+    fn message(&self) -> String {
+        match &self.kind {
+            ResolverErrorKind::InvalidMultiplication { target, args } => {
+                format!(
+                    "cannot multiply {} by multiple expressions ({})",
+                    target,
+                    join_args(args)
+                )
+            }
+            ResolverErrorKind::UnknownFunction(name) => format!("unknown function '{}'", name),
+            ResolverErrorKind::ArityMismatch {
+                name,
+                expected,
+                got,
+            } => format!(
+                "function {} takes {} argument(s) but got {}",
+                name, expected, got
+            ),
+            ResolverErrorKind::UnknownIdentifier(name) => format!("unknown identifier '{}'", name),
+            ResolverErrorKind::UndefinedAns => "ans not yet defined".to_string(),
+        }
+    }
+
+    fn note(&self) -> &Option<String> {
+        &self.note
+    }
+
+    fn prefix(&self) -> &'static str {
+        "Resolver Error"
+    }
+}
+
+fn join_args(args: &[RawExpr]) -> String {
+    args.iter()
+        .map(|x| x.to_string())
+        .collect::<Vec<_>>()
+        .join(", ")
 }
 
 #[allow(private_bounds)]

@@ -1,5 +1,10 @@
 use crate::{
-    expr::Expr, function::Function, operator::Operator, raw_expr::{RawExpr, RawExprKind}, user_function::UserFunction,
+    errors::{ResolverError, ResolverErrorKind},
+    expr::Expr,
+    function::Function,
+    operator::Operator,
+    raw_expr::{RawExpr, RawExprKind},
+    user_function::UserFunction,
 };
 use std::{borrow::Borrow, collections::HashMap, hash::Hash};
 
@@ -14,22 +19,12 @@ macro_rules! err_fmt {
     };
 }
 
-macro_rules! err_ident {
-    ($ident:expr) => {{
-        if $ident == "ans" {
-            Err("Resolver Error: ans not yet defined".to_string())
-        } else {
-            err_fmt!("Resolver Error: unknown identifier '{}'", $ident)
-        }
-    }};
-}
-
 impl RawExpr {
     pub fn resolve<K>(
         self,
         vars: &HashMap<K, f64>,
         funcs: &HashMap<String, UserFunction>,
-    ) -> Result<Expr, String>
+    ) -> Result<Expr, ResolverError>
     where
         K: Borrow<str> + Hash + Eq,
     {
@@ -64,14 +59,8 @@ impl RawExpr {
             RawExprKind::Apply { name, mut args } => {
                 if let Some(var) = vars.get(&name).cloned() {
                     if args.len() != 1 {
-                        return err_fmt!(
-                            "Resolver Error: cannot multiply {} by multiple expressions ({})",
-                            name,
-                            args.into_iter()
-                                .map(|x| x.to_string())
-                                .collect::<Vec<_>>()
-                                .join(", ")
-                        );
+                        let kind = ResolverErrorKind::InvalidMultiplication { target: name, args };
+                        return Err(ResolverError::new(kind, Some(self.span)));
                     }
 
                     let arg = args.pop().unwrap();
@@ -105,7 +94,8 @@ impl RawExpr {
                         args: resolved_args,
                     }
                 } else {
-                    return err_fmt!("Resolver Error: unknown function '{}'", name);
+                    let kind = ResolverErrorKind::UnknownFunction(name);
+                    return Err(ResolverError::new(kind, Some(self.span)));
                 }
             }
 
@@ -128,7 +118,13 @@ impl RawExpr {
                 if let Some(var) = vars.get(&ident).cloned() {
                     Expr::Number(var)
                 } else {
-                    return err_ident!(ident);
+                    let kind = if ident == "ans" {
+                        ResolverErrorKind::UndefinedAns
+                    } else {
+                        ResolverErrorKind::UnknownIdentifier(ident)
+                    };
+
+                    return Err(ResolverError::new(kind, Some(self.span)));
                 }
             }
             RawExprKind::Call { func, args } => Expr::Call {
@@ -145,12 +141,13 @@ impl RawExpr {
                 let func_params = func.params();
 
                 if func_params.len() != args.len() {
-                    return err_fmt!(
-                        "Resolver Error: function {} takes {} argument(s) but got {}",
-                        func,
-                        func_params.len(),
-                        args.len()
-                    );
+                    let kind = ResolverErrorKind::ArityMismatch {
+                        name: func.to_string(),
+                        expected: func_params.len(),
+                        got: args.len(),
+                    };
+
+                    return Err(ResolverError::new(kind, Some(self.span)));
                 }
 
                 Expr::UserCall {
