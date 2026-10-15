@@ -21,12 +21,12 @@ impl RawExpr {
 
         // resolve descends the tree, so it grows the native stack the same way
         // eval does, and under dynamic scoping it runs beneath eval's frames
-        if depth.nodes_exceeded() {
+        if depth.exhausted() {
             let kind = ResolverErrorKind::ExpressionTooDeep;
             return Err(ResolverError::new(kind, Some(span)));
         }
 
-        let depth = depth.descend();
+        let depth = depth.nest();
 
         let kind = match self.kind {
             RawExprKind::Number(n) => ExprKind::Number(n),

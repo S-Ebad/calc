@@ -29,43 +29,59 @@ fn to_bits(args: &[f64]) -> Vec<u64> {
     args.iter().map(|x| x.to_bits()).collect()
 }
 
-/// How far into a user call, and how far into the native stack.
+/// How far into a user call, and how much native stack that has cost.
 ///
 /// `calls` bounds how deeply user functions may nest; it is the limit a
-/// runaway recursion is expected to hit. `nodes` counts every recursive
-/// descent in resolve and eval, which is what the real stack grows by. The
-/// second is needed because the two multiply: resolving and evaluating a
-/// body happens underneath the eval frames of every call above it, so a
-/// modest body depth at a modest call depth still overflows.
+/// runaway recursion is expected to hit. `cost` approximates the stack itself,
+/// which is a separate concern: resolving and evaluating a body happens
+/// underneath the frames of every call above it, so a modest body depth at a
+/// modest call depth still overflows.
+///
+/// Descents are weighted because they are not alike. The parser and the
+/// resolver carry a whole match of locals per frame and run out of a default
+/// thread stack at around a hundred and fifty levels; the evaluator survives
+/// past three hundred. Counting them equally would either leave parsing
+/// unprotected or refuse recursion depths that are perfectly safe.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct Depth {
     calls: u32,
-    nodes: u32,
+    cost: u32,
 }
 
 impl Depth {
-    // a body 12 deep at 99 calls already aborts, while a flat expression
-    // survives past 800, so the ceiling is well under the shallowest of those
-    const MAX_CALLS: u32 = 100;
-    const MAX_NODES: u32 = 512;
+    const MAX_CALLS: u32 = 80;
+
+    // measured against the 2 MiB a spawned thread gets rather than the larger
+    // main stack, since that is the smaller guarantee a caller has
+    const MAX_COST: u32 = 320;
+    const NESTING_COST: u32 = 4;
+    const EVAL_COST: u32 = 1;
 
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// One step further down an expression tree.
-    pub fn descend(self) -> Self {
+    /// One level further into a nested expression, while parsing or resolving.
+    pub fn nest(self) -> Self {
         Self {
-            nodes: self.nodes + 1,
+            cost: self.cost + Self::NESTING_COST,
             ..self
         }
     }
 
-    /// One step further into a user function body.
+    /// One level further down an expression tree, while evaluating.
+    pub fn step(self) -> Self {
+        Self {
+            cost: self.cost + Self::EVAL_COST,
+            ..self
+        }
+    }
+
+    /// One level further into a user function body.
     pub fn call(self) -> Self {
         Self {
             calls: self.calls + 1,
-            nodes: self.nodes + 1,
+            cost: self.cost + Self::EVAL_COST,
         }
     }
 
@@ -73,8 +89,8 @@ impl Depth {
         self.calls >= Self::MAX_CALLS
     }
 
-    pub fn nodes_exceeded(&self) -> bool {
-        self.nodes >= Self::MAX_NODES
+    pub fn exhausted(&self) -> bool {
+        self.cost >= Self::MAX_COST
     }
 }
 
@@ -166,11 +182,11 @@ impl Expr {
             return Err(at_span(EvalErrorKind::RecursionLimit));
         }
 
-        if depth.nodes_exceeded() {
+        if depth.exhausted() {
             return Err(at_span(EvalErrorKind::ExpressionTooDeep));
         }
 
-        let depth = depth.descend();
+        let depth = depth.step();
 
         match self.kind {
             ExprKind::Number(num) => Ok(num),

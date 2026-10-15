@@ -184,7 +184,7 @@ fn nud(
     // re-enter nud, so the native stack grows with how deeply they nest. a
     // flat left-associative chain loops in parse_expression instead and is
     // deliberately not bounded by this
-    if depth.nodes_exceeded() {
+    if depth.exhausted() {
         let span = Span::new(lexer.end_pos(), lexer.end_pos());
         return Err(ParseError::new(
             ParseErrorKind::ExpressionTooDeep,
@@ -192,7 +192,7 @@ fn nud(
         ));
     }
 
-    let depth = depth.descend();
+    let depth = depth.nest();
 
     // unary plus is a no-op: it builds nothing, so a run of them collapses
     // here rather than costing a frame and a descent each
@@ -504,9 +504,9 @@ fn parse_expression(
         // node, so the tree it leaves behind is dropped recursively later.
         // resolve refuses anything this deep anyway, so bounding it here
         // costs nothing and keeps the tree from being built at all
-        depth = depth.descend();
+        depth = depth.nest();
 
-        if depth.nodes_exceeded() {
+        if depth.exhausted() {
             let span = *lhs.span();
             return Err(ParseError::new(
                 ParseErrorKind::ExpressionTooDeep,
