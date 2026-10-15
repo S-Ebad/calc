@@ -48,12 +48,12 @@ impl UserFunction {
     }
 
     pub fn help(&self) -> String {
+        // the definition as it was typed. reconstructing it from the body
+        // instead would normalise the source away, turning '2x' into '2 * x'
         format!(
-            "{} is a user-defined function.\n\n{}({}) = {}",
+            "{} is a user-defined function.\n\n{}",
             self.name,
-            self.name,
-            self.params.join(", "),
-            self.body.kind
+            self.src.trim()
         )
     }
 
