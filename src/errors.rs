@@ -95,6 +95,15 @@ pub enum LexerErrorKind {
     InvalidNumber(String),
 }
 
+impl LexerErrorKind {
+    pub fn message(&self) -> String {
+        match self {
+            LexerErrorKind::InvalidToken(c) => format!("invalid token {}", c),
+            LexerErrorKind::InvalidNumber(num) => format!("invalid number: '{}'", num),
+        }
+    }
+}
+
 trait Diagnostic {
     fn span(&self) -> &Option<Span>;
     fn message(&self) -> String;
@@ -129,6 +138,10 @@ impl LexerError {
             note: Some(note.to_owned()),
         }
     }
+
+    pub fn kind(&self) -> &LexerErrorKind {
+        &self.kind
+    }
 }
 
 impl Diagnostic for LexerError {
@@ -137,10 +150,7 @@ impl Diagnostic for LexerError {
     }
 
     fn message(&self) -> String {
-        match &self.kind {
-            LexerErrorKind::InvalidToken(c) => format!("invalid token {}", c),
-            LexerErrorKind::InvalidNumber(num) => format!("invalid number: '{}'", num),
-        }
+        self.kind.message()
     }
 
     fn note(&self) -> &Option<String> {
@@ -170,38 +180,9 @@ pub enum ParseErrorKind {
     FunctionUsedAsValue(String),
 }
 
-#[derive(Debug)]
-pub struct ParseError {
-    kind: ParseErrorKind,
-    span: Option<Span>,
-    note: Option<String>,
-}
-
-impl ParseError {
-    pub fn new(kind: ParseErrorKind, span: Option<Span>) -> Self {
-        Self {
-            kind,
-            span,
-            note: None,
-        }
-    }
-
-    pub fn with_note(kind: ParseErrorKind, span: Option<Span>, note: String) -> Self {
-        Self {
-            kind,
-            span,
-            note: Some(note),
-        }
-    }
-}
-
-impl Diagnostic for ParseError {
-    fn span(&self) -> &Option<Span> {
-        &self.span
-    }
-
-    fn message(&self) -> String {
-        match &self.kind {
+impl ParseErrorKind {
+    pub fn message(&self) -> String {
+        match self {
             ParseErrorKind::EmptyExpression => "no expression to parse".to_string(),
             ParseErrorKind::ExtraClosingParenthesis => {
                 "unexpected closing parenthesis ')'".to_string()
@@ -239,6 +220,45 @@ impl Diagnostic for ParseError {
             }
         }
     }
+}
+
+#[derive(Debug)]
+pub struct ParseError {
+    kind: ParseErrorKind,
+    span: Option<Span>,
+    note: Option<String>,
+}
+
+impl ParseError {
+    pub fn new(kind: ParseErrorKind, span: Option<Span>) -> Self {
+        Self {
+            kind,
+            span,
+            note: None,
+        }
+    }
+
+    pub fn with_note(kind: ParseErrorKind, span: Option<Span>, note: String) -> Self {
+        Self {
+            kind,
+            span,
+            note: Some(note),
+        }
+    }
+
+    pub fn kind(&self) -> &ParseErrorKind {
+        &self.kind
+    }
+}
+
+impl Diagnostic for ParseError {
+    fn span(&self) -> &Option<Span> {
+        &self.span
+    }
+
+    fn message(&self) -> String {
+        self.kind.message()
+    }
 
     fn note(&self) -> &Option<String> {
         &self.note
@@ -266,6 +286,31 @@ pub enum ResolverErrorKind {
     },
 }
 
+impl ResolverErrorKind {
+    pub fn message(&self) -> String {
+        match self {
+            ResolverErrorKind::InvalidMultiplication { target, args } => {
+                format!(
+                    "cannot multiply {} by multiple expressions ({})",
+                    target,
+                    join_args(args)
+                )
+            }
+            ResolverErrorKind::UnknownFunction(name) => format!("unknown function '{}'", name),
+            ResolverErrorKind::ArityMismatch {
+                name,
+                expected,
+                got,
+            } => format!(
+                "function {} takes {} argument(s) but got {}",
+                name, expected, got
+            ),
+            ResolverErrorKind::UnknownIdentifier(name) => format!("unknown identifier '{}'", name),
+            ResolverErrorKind::UndefinedAns => "ans not yet defined".to_string(),
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct ResolverError {
     kind: ResolverErrorKind,
@@ -289,6 +334,10 @@ impl ResolverError {
             note: Some(note),
         }
     }
+
+    pub fn kind(&self) -> &ResolverErrorKind {
+        &self.kind
+    }
 }
 
 impl Diagnostic for ResolverError {
@@ -297,26 +346,7 @@ impl Diagnostic for ResolverError {
     }
 
     fn message(&self) -> String {
-        match &self.kind {
-            ResolverErrorKind::InvalidMultiplication { target, args } => {
-                format!(
-                    "cannot multiply {} by multiple expressions ({})",
-                    target,
-                    join_args(args)
-                )
-            }
-            ResolverErrorKind::UnknownFunction(name) => format!("unknown function '{}'", name),
-            ResolverErrorKind::ArityMismatch {
-                name,
-                expected,
-                got,
-            } => format!(
-                "function {} takes {} argument(s) but got {}",
-                name, expected, got
-            ),
-            ResolverErrorKind::UnknownIdentifier(name) => format!("unknown identifier '{}'", name),
-            ResolverErrorKind::UndefinedAns => "ans not yet defined".to_string(),
-        }
+        self.kind.message()
     }
 
     fn note(&self) -> &Option<String> {
