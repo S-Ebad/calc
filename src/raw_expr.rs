@@ -387,7 +387,8 @@ fn led(
 
             let else_ = parse_expression(lexer, 0, funcs)?;
 
-            let span = Span::merge(*lhs.span(), *then.span());
+            // the whole conditional: condition through else branch
+            let span = Span::merge(*lhs.span(), *else_.span());
 
             let raw_expr_kind = RawExprKind::If {
                 condition: Box::new(lhs),
