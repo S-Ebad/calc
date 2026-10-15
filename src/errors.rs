@@ -1,48 +1,40 @@
-use crate::{lexer::Token, raw_expr::RawExpr};
+use crate::{function::Function, lexer::Token, operator::Operator, raw_expr::RawExpr};
 
 #[derive(Debug)]
 pub enum CalcError {
     Lexer(Box<LexerError>),
     Parser(Box<ParseError>),
     Resolver(Box<ResolverError>),
-    String(String), // Keeping this temporarily until ResolverError & EvalError are implemented
+    Eval(Box<EvalError>),
+}
+
+impl CalcError {
+    // every variant is a Diagnostic, so reporting is pure delegation
+    fn inner(&self) -> &dyn Diagnostic {
+        match self {
+            CalcError::Lexer(e) => e.as_ref(),
+            CalcError::Parser(e) => e.as_ref(),
+            CalcError::Resolver(e) => e.as_ref(),
+            CalcError::Eval(e) => e.as_ref(),
+        }
+    }
 }
 
 impl Diagnostic for CalcError {
     fn span(&self) -> &Option<Span> {
-        match self {
-            CalcError::Lexer(l) => l.span(),
-            CalcError::Parser(p) => p.span(),
-            CalcError::String(_) => &None,
-            CalcError::Resolver(r) => r.span(),
-        }
+        self.inner().span()
     }
 
     fn message(&self) -> String {
-        match self {
-            CalcError::Lexer(l) => l.message(),
-            CalcError::Parser(p) => p.message(),
-            CalcError::String(s) => s.to_owned(),
-            CalcError::Resolver(r) => r.message(),
-        }
+        self.inner().message()
     }
 
     fn note(&self) -> &Option<String> {
-        match self {
-            CalcError::Lexer(l) => l.note(),
-            CalcError::Parser(p) => p.note(),
-            CalcError::String(_) => &None,
-            CalcError::Resolver(r) => r.note(),
-        }
+        self.inner().note()
     }
 
     fn prefix(&self) -> &'static str {
-        match self {
-            CalcError::Lexer(l) => l.prefix(),
-            CalcError::Parser(p) => p.prefix(),
-            CalcError::String(_) => "",
-            CalcError::Resolver(r) => r.prefix(),
-        }
+        self.inner().prefix()
     }
 }
 
@@ -64,9 +56,9 @@ impl From<ResolverError> for CalcError {
     }
 }
 
-impl From<String> for CalcError {
-    fn from(value: String) -> Self {
-        Self::String(value)
+impl From<EvalError> for CalcError {
+    fn from(value: EvalError) -> Self {
+        Self::Eval(Box::new(value))
     }
 }
 
@@ -365,34 +357,211 @@ fn join_args(args: &[RawExpr]) -> String {
         .join(", ")
 }
 
+#[derive(Debug)]
+pub enum EvalErrorKind {
+    // resolving a user function body is a genuine eval-time step under dynamic
+    // scoping, so a resolution failure is one way evaluation can fail.
+    // boxed: ResolverErrorKind's widest variant carries a Vec<RawExpr>, and
+    // EvalError travels up a recursive eval stack (see 04911b4)
+    Resolution(Box<ResolverErrorKind>),
+    RecursionLimit,
+
+    DivisionByZero { lhs: f64, rhs: f64 },
+
+    // 0 ^ -n, from both the '^' operator and pow()
+    ZeroToNegativePower { base: f64, exp: f64 },
+
+    NotPrefixOrPostfix(Operator),
+    AssignmentNotAtTopLevel,
+
+    FactorialUndefined(f64),
+    FactorialTooLarge(f64),
+
+    BuiltinArity { func: Function, got: usize },
+
+    ClampRange { min: f64, max: f64 },
+
+    TanAsymptote(f64),
+    RecipZero,
+    SqrtZeroRoot(f64),
+
+    // the operation is defined but produced NaN
+    UndefinedBinary { lhs: f64, op: Operator, rhs: f64 },
+
+    UndefinedCall { func: Function, args: Vec<f64> },
+}
+
+impl EvalErrorKind {
+    pub fn message(&self) -> String {
+        match self {
+            EvalErrorKind::Resolution(kind) => kind.message(),
+            EvalErrorKind::RecursionLimit => "recursion limit has been reached".to_string(),
+
+            EvalErrorKind::DivisionByZero { lhs, rhs } => {
+                format!("{}/{} is undefined (division by zero)", lhs, rhs)
+            }
+
+            EvalErrorKind::ZeroToNegativePower { base, exp } => format!(
+                "{0}^{1} is undefined (division by zero: 1/{0}^{2})",
+                base,
+                exp,
+                exp.abs()
+            ),
+
+            EvalErrorKind::NotPrefixOrPostfix(op) => {
+                format!("{} is not a postfix/prefix operator", op)
+            }
+
+            EvalErrorKind::AssignmentNotAtTopLevel => {
+                "'=' can only be used at the top level for assignment".to_string()
+            }
+
+            EvalErrorKind::FactorialUndefined(n) => {
+                format!("factorial is undefined for {}", n)
+            }
+
+            EvalErrorKind::FactorialTooLarge(n) => {
+                format!("{}! is too large (max is 170!)", n)
+            }
+
+            EvalErrorKind::BuiltinArity { func, got } => format!(
+                "function {} takes {} argument(s) but got {}",
+                func,
+                func.arity_str(),
+                got
+            ),
+
+            EvalErrorKind::ClampRange { min, max } => {
+                format!("clamp range min ({}) must be less than max ({})", min, max)
+            }
+
+            EvalErrorKind::TanAsymptote(n) => format!(
+                "function tan({}) is undefined at asymptote (pi / 2 + n * pi)",
+                n
+            ),
+
+            EvalErrorKind::RecipZero => "recip(0) is undefined (division by zero)".to_string(),
+
+            EvalErrorKind::SqrtZeroRoot(x) => format!(
+                "sqrt({0}, 0) is undefined (division by zero: {0} ^ (1/0))",
+                x
+            ),
+
+            EvalErrorKind::UndefinedBinary { lhs, op, rhs } => {
+                format!("{} {} {} is undefined", lhs, op, rhs)
+            }
+
+            EvalErrorKind::UndefinedCall { func, args } => format!(
+                "{}({}) is undefined",
+                func,
+                args.iter()
+                    .map(|x| x.to_string())
+                    .collect::<Vec<String>>()
+                    .join(", ")
+            ),
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct EvalError {
+    kind: EvalErrorKind,
+    span: Option<Span>,
+    note: Option<String>,
+}
+
+impl EvalError {
+    pub fn new(kind: EvalErrorKind, span: Option<Span>) -> Self {
+        Self {
+            kind,
+            span,
+            note: None,
+        }
+    }
+
+    pub fn with_note(kind: EvalErrorKind, span: Option<Span>, note: String) -> Self {
+        Self {
+            kind,
+            span,
+            note: Some(note),
+        }
+    }
+
+    pub fn kind(&self) -> &EvalErrorKind {
+        &self.kind
+    }
+}
+
+impl Diagnostic for EvalError {
+    fn span(&self) -> &Option<Span> {
+        &self.span
+    }
+
+    fn message(&self) -> String {
+        self.kind.message()
+    }
+
+    fn note(&self) -> &Option<String> {
+        &self.note
+    }
+
+    fn prefix(&self) -> &'static str {
+        match &self.kind {
+            // the prefix names what went wrong, not when it was noticed
+            EvalErrorKind::Resolution(_) => "Resolver Error",
+            _ => "Eval Error",
+        }
+    }
+}
+
+impl From<ResolverError> for EvalError {
+    fn from(value: ResolverError) -> Self {
+        let ResolverError { kind, span, note } = value;
+
+        Self {
+            kind: EvalErrorKind::Resolution(Box::new(kind)),
+            span,
+            note,
+        }
+    }
+}
+
 #[allow(private_bounds)]
 pub fn render_error(src: &str, err: impl Diagnostic) -> String {
     let prefix = err.prefix();
     let message = err.message();
     let note = err.note().as_deref();
 
-    let out;
-    if let Some(span) = err.span() {
-        let line_start = src[..span.start].rfind('\n').map(|i| i + 1).unwrap_or(0);
-        let line_end = src[span.end..]
-            .find('\n')
-            .map(|i| span.end + i)
-            .unwrap_or(src.len());
+    // a span is only meaningful against the source it was taken from; refuse to
+    // slice with one that doesn't fit rather than panicking on a bad index
+    let fits = |span: &Span| {
+        span.start <= span.end
+            && span.end <= src.len()
+            && src.is_char_boundary(span.start)
+            && src.is_char_boundary(span.end)
+    };
 
-        let line = &src[line_start..line_end];
+    let Some(span) = err.span().filter(fits) else {
+        return format!("{prefix}: {message}");
+    };
 
-        let col_start = span.start - line_start;
-        let col_end = span.end - line_start;
+    let line_start = src[..span.start].rfind('\n').map(|i| i + 1).unwrap_or(0);
+    let line_end = src[span.end..]
+        .find('\n')
+        .map(|i| span.end + i)
+        .unwrap_or(src.len());
 
-        let indent = " ".repeat(col_start);
-        let carets = "^".repeat((col_end - col_start).max(1));
+    let line = &src[line_start..line_end];
 
-        let note_str = note.map(|n| format!(" {n}")).unwrap_or_default();
+    // char counts, not byte offsets, so a multi-byte char earlier in the line
+    // doesn't shift the carets
+    let col_start = src[line_start..span.start].chars().count();
+    let col_end = src[line_start..span.end].chars().count();
 
-        out = format!("{prefix}: {message}\n {line}\n {indent}{carets}{note_str}");
-    } else {
-        out = format!("{prefix}: {message}");
-    }
+    let indent = " ".repeat(col_start);
+    let carets = "^".repeat((col_end - col_start).max(1));
 
-    out
+    let note_str = note.map(|n| format!(" {n}")).unwrap_or_default();
+
+    format!("{prefix}: {message}\n {line}\n {indent}{carets}{note_str}")
 }

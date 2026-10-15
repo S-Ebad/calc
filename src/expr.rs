@@ -2,7 +2,7 @@ use std::{borrow::Borrow, collections::HashMap, fmt};
 
 use crate::{
     calc::CacheKey,
-    errors::{CalcError, Span},
+    errors::{EvalError, EvalErrorKind, Span},
     function::Function,
     operator::Operator,
     user_function::UserFunction,
@@ -106,15 +106,17 @@ impl Expr {
         funcs: &HashMap<String, UserFunction>,
         cache: &mut HashMap<CacheKey, f64>,
         depth: u32,
-    ) -> Result<f64, CalcError>
-    // temporary CalcError until we get EvalError/RuntimeError
+    ) -> Result<f64, EvalError>
     where
         K: Borrow<str>,
     {
+        // operator.rs and function.rs have no spans to offer; this is the layer
+        // that knows where the expression came from, so it attaches them
+        let span = self.span;
+        let at_span = |kind| EvalError::new(kind, Some(span));
+
         if depth >= 100 {
-            return Err(CalcError::String(
-                "Eval Error: recursion limit has been reached".to_string(),
-            ));
+            return Err(at_span(EvalErrorKind::RecursionLimit));
         }
 
         match self.kind {
@@ -123,12 +125,12 @@ impl Expr {
                 let lhs = lhs.eval(vars, funcs, cache, depth)?;
                 let rhs = rhs.eval(vars, funcs, cache, depth)?;
 
-                op.perform_op(lhs, Some(rhs)).map_err(CalcError::String)
+                op.perform_op(lhs, Some(rhs)).map_err(at_span)
             }
 
             ExprKind::Unary { op, expr } | ExprKind::Postfix { op, expr } => op
                 .perform_op(expr.eval(vars, funcs, cache, depth)?, None)
-                .map_err(CalcError::String),
+                .map_err(at_span),
 
             ExprKind::Call { func, args } => {
                 let args = args
@@ -136,7 +138,7 @@ impl Expr {
                     .map(|expr| expr.eval(vars, funcs, cache, depth))
                     .collect::<Result<Vec<f64>, _>>()?;
 
-                func.call(&args).map_err(CalcError::String)
+                func.call(&args).map_err(at_span)
             }
 
             ExprKind::If {
@@ -179,7 +181,8 @@ impl Expr {
                     scope.entry(key.borrow()).or_insert(*val);
                 }
 
-                // TODO: Later use EvalError::Resolution
+                // under dynamic scoping the body can only be resolved once the
+                // arguments are known, so resolution is an eval-time step here
                 let new_body = func_body.resolve(&scope, funcs)?;
                 let result = new_body.eval(&scope, funcs, cache, depth + 1)?;
 

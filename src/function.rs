@@ -1,4 +1,4 @@
-use crate::err_fmt;
+use crate::errors::EvalErrorKind;
 use std::{f64, fmt};
 use strum::EnumIter;
 
@@ -90,26 +90,30 @@ impl Function {
         }
     }
 
-    pub fn call(&self, args: &[f64]) -> Result<f64, String> {
+    // human-readable accepted argument count, for diagnostics
+    pub fn arity_str(&self) -> String {
+        let (min, max) = self.arity();
+
+        // special case for usize::MAX or min==max
+        if max == usize::MAX {
+            format!("at least {}", min)
+        } else if min == max {
+            format!("{}", min)
+        } else {
+            format!("{}-{}", min, max)
+        }
+    }
+
+    // the caller owns the span, so only the error kind comes back from here
+    pub fn call(&self, args: &[f64]) -> Result<f64, EvalErrorKind> {
         use Function as F;
 
         let (min, max) = self.arity();
         if !(min..=max).contains(&args.len()) {
-            // special case for usize::MAX or min==max
-            let arity_str = if max == usize::MAX {
-                format!("at least {}", min)
-            } else if min == max {
-                format!("{}", min)
-            } else {
-                format!("{}-{}", min, max)
-            };
-
-            return err_fmt!(
-                "Eval Error: function {} takes {} argument(s) but got {}",
-                self,
-                arity_str,
-                args.len()
-            );
+            return Err(EvalErrorKind::BuiltinArity {
+                func: *self,
+                got: args.len(),
+            });
         }
 
         let result = match self {
@@ -130,11 +134,7 @@ impl Function {
                 let max = args[2];
 
                 if min > max {
-                    return err_fmt!(
-                        "Eval Error: clamp range min ({}) must be less than max ({})",
-                        min,
-                        max
-                    );
+                    return Err(EvalErrorKind::ClampRange { min, max });
                 }
 
                 x.clamp(min, max)
@@ -147,10 +147,7 @@ impl Function {
                 if (args[0] - normalized * f64::consts::FRAC_PI_2).abs() < f64::EPSILON
                     && normalized as i64 % 2 != 0
                 {
-                    return err_fmt!(
-                        "Eval Error: function tan({}) is undefined at asymptote (pi / 2 + n * pi)",
-                        args[0]
-                    );
+                    return Err(EvalErrorKind::TanAsymptote(args[0]));
                 }
 
                 args[0].tan()
@@ -164,7 +161,7 @@ impl Function {
             F::Cbrt => args[0].cbrt(),
             F::Recip => {
                 if args[0] == 0f64 {
-                    return Err("Eval Error: recip(0) is undefined (division by zero)".to_string());
+                    return Err(EvalErrorKind::RecipZero);
                 }
 
                 args[0].recip()
@@ -174,10 +171,7 @@ impl Function {
                 let x = args[0];
 
                 if root == 0f64 {
-                    return err_fmt!(
-                        "Eval Error: sqrt({0}, 0) is undefined (division by zero: {0} ^ (1/0)",
-                        x
-                    );
+                    return Err(EvalErrorKind::SqrtZeroRoot(x));
                 }
 
                 if x < 0.0 && root.fract() == 0.0 && (root as i64) % 2 != 0 {
@@ -198,12 +192,10 @@ impl Function {
 
             F::Pow => {
                 if args[0] == 0f64 && args[1] < 0f64 {
-                    return err_fmt!(
-                        "Eval Error: pow({0}, {1}) is undefined (division by zero: 1/{0}^{2})",
-                        args[0],
-                        args[1],
-                        args[1].abs()
-                    );
+                    return Err(EvalErrorKind::ZeroToNegativePower {
+                        base: args[0],
+                        exp: args[1],
+                    });
                 }
 
                 args[0].powf(args[1])
@@ -213,14 +205,10 @@ impl Function {
         };
 
         if result.is_nan() {
-            return err_fmt!(
-                "Eval Error: {}({}) is undefined",
-                self,
-                args.iter()
-                    .map(|x| x.to_string())
-                    .collect::<Vec<String>>()
-                    .join(", ")
-            );
+            return Err(EvalErrorKind::UndefinedCall {
+                func: *self,
+                args: args.to_vec(),
+            });
         }
 
         Ok(result)
