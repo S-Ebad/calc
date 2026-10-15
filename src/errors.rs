@@ -194,12 +194,14 @@ pub enum ParseErrorKind {
     CannotStartExpression(Token),
     UnexpectedToken(Token),
     FunctionUsedAsValue(String),
+    ExpressionTooDeep,
 }
 
 impl ParseErrorKind {
     pub fn message(&self) -> String {
         match self {
             ParseErrorKind::EmptyExpression => "no expression to parse".to_string(),
+            ParseErrorKind::ExpressionTooDeep => "expression is nested too deeply".to_string(),
             ParseErrorKind::ExtraClosingParenthesis => {
                 "unexpected closing parenthesis ')'".to_string()
             }
@@ -295,6 +297,7 @@ pub enum ResolverErrorKind {
     UnknownFunction(String),
     UnknownIdentifier(String),
     UndefinedAns, // when 'ans' is used as the first expression (no previous answer)
+    ExpressionTooDeep,
     ArityMismatch {
         name: String,
         expected: usize,
@@ -323,6 +326,7 @@ impl ResolverErrorKind {
             ),
             ResolverErrorKind::UnknownIdentifier(name) => format!("unknown identifier '{}'", name),
             ResolverErrorKind::UndefinedAns => "ans not yet defined".to_string(),
+            ResolverErrorKind::ExpressionTooDeep => "expression is nested too deeply".to_string(),
         }
     }
 }
@@ -389,6 +393,7 @@ pub enum EvalErrorKind {
     // EvalError travels up a recursive eval stack (see 04911b4)
     Resolution(Box<ResolverErrorKind>),
     RecursionLimit,
+    ExpressionTooDeep,
 
     DivisionByZero { lhs: f64, rhs: f64 },
 
@@ -420,6 +425,7 @@ impl EvalErrorKind {
         match self {
             EvalErrorKind::Resolution(kind) => kind.message(),
             EvalErrorKind::RecursionLimit => "recursion limit has been reached".to_string(),
+            EvalErrorKind::ExpressionTooDeep => "expression is nested too deeply".to_string(),
 
             EvalErrorKind::DivisionByZero { lhs, rhs } => {
                 format!("{}/{} is undefined (division by zero)", lhs, rhs)

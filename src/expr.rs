@@ -28,6 +28,55 @@ fn to_bits(args: &[f64]) -> Vec<u64> {
     args.iter().map(|x| x.to_bits()).collect()
 }
 
+/// How far into a user call, and how far into the native stack.
+///
+/// `calls` bounds how deeply user functions may nest; it is the limit a
+/// runaway recursion is expected to hit. `nodes` counts every recursive
+/// descent in resolve and eval, which is what the real stack grows by. The
+/// second is needed because the two multiply: resolving and evaluating a
+/// body happens underneath the eval frames of every call above it, so a
+/// modest body depth at a modest call depth still overflows.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct Depth {
+    calls: u32,
+    nodes: u32,
+}
+
+impl Depth {
+    // a body 12 deep at 99 calls already aborts, while a flat expression
+    // survives past 800, so the ceiling is well under the shallowest of those
+    const MAX_CALLS: u32 = 100;
+    const MAX_NODES: u32 = 512;
+
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// One step further down an expression tree.
+    pub fn descend(self) -> Self {
+        Self {
+            nodes: self.nodes + 1,
+            ..self
+        }
+    }
+
+    /// One step further into a user function body.
+    pub fn call(self) -> Self {
+        Self {
+            calls: self.calls + 1,
+            nodes: self.nodes + 1,
+        }
+    }
+
+    pub fn calls_exceeded(&self) -> bool {
+        self.calls >= Self::MAX_CALLS
+    }
+
+    pub fn nodes_exceeded(&self) -> bool {
+        self.nodes >= Self::MAX_NODES
+    }
+}
+
 #[derive(Debug, PartialEq, Clone)]
 pub enum ExprKind {
     Number(f64),
@@ -105,7 +154,7 @@ impl Expr {
         vars: &HashMap<K, f64>,
         funcs: &HashMap<String, UserFunction>,
         cache: &mut HashMap<CacheKey, f64>,
-        depth: u32,
+        depth: Depth,
     ) -> Result<f64, EvalError>
     where
         K: Borrow<str>,
@@ -115,9 +164,15 @@ impl Expr {
         let span = self.span;
         let at_span = |kind| EvalError::new(kind, Some(span));
 
-        if depth >= 100 {
+        if depth.calls_exceeded() {
             return Err(at_span(EvalErrorKind::RecursionLimit));
         }
+
+        if depth.nodes_exceeded() {
+            return Err(at_span(EvalErrorKind::ExpressionTooDeep));
+        }
+
+        let depth = depth.descend();
 
         match self.kind {
             ExprKind::Number(num) => Ok(num),
@@ -188,11 +243,11 @@ impl Expr {
                 // arguments are known, so resolution is an eval-time step here.
                 // either step can fail inside the body, so both record the call
                 let new_body = func_body
-                    .resolve(&scope, funcs)
+                    .resolve(&scope, funcs, depth)
                     .map_err(|err| EvalError::from(err).push_frame(&key.0, func_src, span))?;
 
                 let result = new_body
-                    .eval(&scope, funcs, cache, depth + 1)
+                    .eval(&scope, funcs, cache, depth.call())
                     .map_err(|err| err.push_frame(&key.0, func_src, span))?;
 
                 cache.insert(key, result);

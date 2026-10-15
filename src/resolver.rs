@@ -1,6 +1,6 @@
 use crate::{
     errors::{ResolverError, ResolverErrorKind},
-    expr::{Expr, ExprKind},
+    expr::{Depth, Expr, ExprKind},
     function::Function,
     operator::Operator,
     raw_expr::{RawExpr, RawExprKind},
@@ -13,6 +13,7 @@ impl RawExpr {
         self,
         vars: &HashMap<K, f64>,
         funcs: &HashMap<String, UserFunction>,
+        depth: Depth,
     ) -> Result<Expr, ResolverError>
     where
         K: Borrow<str> + Hash + Eq,
@@ -20,11 +21,20 @@ impl RawExpr {
         // carried onto the resolved node so eval errors can point at source too
         let span = self.span;
 
+        // resolve descends the tree, so it grows the native stack the same way
+        // eval does, and under dynamic scoping it runs beneath eval's frames
+        if depth.nodes_exceeded() {
+            let kind = ResolverErrorKind::ExpressionTooDeep;
+            return Err(ResolverError::new(kind, Some(span)));
+        }
+
+        let depth = depth.descend();
+
         let kind = match self.kind {
             RawExprKind::Number(n) => ExprKind::Number(n),
             RawExprKind::Binary { op, lhs, rhs } => {
-                let lhs = lhs.resolve(vars, funcs)?;
-                let rhs = rhs.resolve(vars, funcs)?;
+                let lhs = lhs.resolve(vars, funcs, depth)?;
+                let rhs = rhs.resolve(vars, funcs, depth)?;
 
                 ExprKind::Binary {
                     op,
@@ -33,7 +43,7 @@ impl RawExpr {
                 }
             }
             RawExprKind::Unary { op, expr } => {
-                let expr = expr.resolve(vars, funcs)?;
+                let expr = expr.resolve(vars, funcs, depth)?;
 
                 ExprKind::Unary {
                     op,
@@ -41,7 +51,7 @@ impl RawExpr {
                 }
             }
             RawExprKind::Postfix { op, expr } => {
-                let expr = expr.resolve(vars, funcs)?;
+                let expr = expr.resolve(vars, funcs, depth)?;
 
                 ExprKind::Postfix {
                     op,
@@ -56,7 +66,7 @@ impl RawExpr {
                     }
 
                     let arg = args.pop().unwrap();
-                    let rhs = arg.resolve(vars, funcs)?;
+                    let rhs = arg.resolve(vars, funcs, depth)?;
 
                     let lhs = Expr::new(ExprKind::Number(var), span);
 
@@ -68,7 +78,7 @@ impl RawExpr {
                 } else if funcs.contains_key(&name) {
                     let resolved_args = args
                         .into_iter()
-                        .map(|raw_expr| raw_expr.resolve(vars, funcs))
+                        .map(|raw_expr| raw_expr.resolve(vars, funcs, depth))
                         .collect::<Result<Vec<Expr>, _>>()?;
 
                     ExprKind::UserCall {
@@ -78,7 +88,7 @@ impl RawExpr {
                 } else if let Some(func) = Function::from(&name) {
                     let resolved_args = args
                         .into_iter()
-                        .map(|raw_expr| raw_expr.resolve(vars, funcs))
+                        .map(|raw_expr| raw_expr.resolve(vars, funcs, depth))
                         .collect::<Result<Vec<_>, _>>()?;
 
                     ExprKind::Call {
@@ -96,9 +106,9 @@ impl RawExpr {
                 then,
                 else_,
             } => {
-                let condition = condition.resolve(vars, funcs)?;
-                let then = then.resolve(vars, funcs)?;
-                let else_ = else_.resolve(vars, funcs)?;
+                let condition = condition.resolve(vars, funcs, depth)?;
+                let then = then.resolve(vars, funcs, depth)?;
+                let else_ = else_.resolve(vars, funcs, depth)?;
 
                 ExprKind::If {
                     condition: Box::new(condition),
@@ -123,7 +133,7 @@ impl RawExpr {
                 func,
                 args: args
                     .into_iter()
-                    .map(|raw_expr| raw_expr.resolve(vars, funcs))
+                    .map(|raw_expr| raw_expr.resolve(vars, funcs, depth))
                     .collect::<Result<Vec<Expr>, _>>()?,
             },
 
@@ -146,7 +156,7 @@ impl RawExpr {
                     name,
                     args: args
                         .into_iter()
-                        .map(|raw_expr| raw_expr.resolve(vars, funcs))
+                        .map(|raw_expr| raw_expr.resolve(vars, funcs, depth))
                         .collect::<Result<Vec<Expr>, _>>()?,
                 }
             }

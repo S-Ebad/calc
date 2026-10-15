@@ -1,6 +1,7 @@
 use crate::{
     constant::Constant,
     errors::{ParseError, ParseErrorKind, Span},
+    expr::Depth,
     function::Function,
     lexer::{Lexer, Token, TokenKind},
     operator::Operator,
@@ -104,6 +105,7 @@ impl std::ops::Deref for RawExpr {
 fn consume_args(
     lexer: &mut Lexer,
     funcs: &HashMap<String, UserFunction>,
+    depth: Depth,
 ) -> Result<(Vec<RawExpr>, Span), ParseError> {
     // no parenthesis. i.e: sin10
     let open = lexer.peek_token();
@@ -117,7 +119,7 @@ fn consume_args(
     };
 
     if !matches!(open.kind, TokenKind::LParen) {
-        let arg = nud(lexer, funcs)?;
+        let arg = nud(lexer, funcs, depth)?;
         let span = *arg.span();
 
         return Ok((vec![arg], span));
@@ -135,7 +137,7 @@ fn consume_args(
     let mut args: Vec<RawExpr> = Vec::new();
 
     loop {
-        args.push(parse_expression(lexer, 0, funcs)?);
+        args.push(parse_expression(lexer, 0, funcs, depth)?);
 
         if lexer.peek() == Some(&TokenKind::Comma) {
             let comma = lexer.next_token();
@@ -165,7 +167,25 @@ fn consume_args(
     Ok((args, open_span.merge(close.span)))
 }
 
-fn nud(lexer: &mut Lexer, funcs: &HashMap<String, UserFunction>) -> Result<RawExpr, ParseError> {
+fn nud(
+    lexer: &mut Lexer,
+    funcs: &HashMap<String, UserFunction>,
+    depth: Depth,
+) -> Result<RawExpr, ParseError> {
+    // nesting recurses here: a group, an argument list or a unary chain each
+    // re-enter nud, so the native stack grows with how deeply they nest. a
+    // flat left-associative chain loops in parse_expression instead and is
+    // deliberately not bounded by this
+    if depth.nodes_exceeded() {
+        let span = Span::new(lexer.end_pos(), lexer.end_pos());
+        return Err(ParseError::new(
+            ParseErrorKind::ExpressionTooDeep,
+            Some(span),
+        ));
+    }
+
+    let depth = depth.descend();
+
     let expr = match lexer.next_token() {
         Some(Token {
             kind: TokenKind::Number(num),
@@ -195,7 +215,7 @@ fn nud(lexer: &mut Lexer, funcs: &HashMap<String, UserFunction>) -> Result<RawEx
                     return Err(ParseError::with_note(kind, Some(span), note));
                 }
 
-                let (args, args_span) = consume_args(lexer, funcs)?;
+                let (args, args_span) = consume_args(lexer, funcs, depth)?;
 
                 // the call runs from the name through the closing parenthesis
                 let call_span = span.merge(args_span);
@@ -216,7 +236,7 @@ fn nud(lexer: &mut Lexer, funcs: &HashMap<String, UserFunction>) -> Result<RawEx
             kind: TokenKind::LParen,
             span,
         }) => {
-            let lhs: RawExpr = parse_expression(lexer, 0, funcs)?;
+            let lhs: RawExpr = parse_expression(lexer, 0, funcs, depth)?;
 
             match lexer.next_token() {
                 Some(Token {
@@ -262,11 +282,11 @@ fn nud(lexer: &mut Lexer, funcs: &HashMap<String, UserFunction>) -> Result<RawEx
             let unary = if op == Operator::Sub {
                 Operator::Neg
             } else {
-                return nud(lexer, funcs);
+                return nud(lexer, funcs, depth);
             };
 
             // for chained unary (i.e --x)
-            let expr = nud(lexer, funcs)?;
+            let expr = nud(lexer, funcs, depth)?;
 
             let raw_expr_kind = RawExprKind::Unary {
                 op: unary,
@@ -302,6 +322,7 @@ fn led(
     lexer: &mut Lexer,
     lhs: RawExpr,
     funcs: &HashMap<String, UserFunction>,
+    depth: Depth,
 ) -> Result<RawExpr, ParseError> {
     let token = lexer.peek_token();
     let expr = match token {
@@ -341,7 +362,7 @@ fn led(
             // taken before lhs is moved into the argument list
             let lhs_span = *lhs.span();
 
-            let (mut args, args_span) = consume_args(lexer, funcs)?;
+            let (mut args, args_span) = consume_args(lexer, funcs, depth)?;
             args.insert(0, lhs);
 
             // a dot-call spans its receiver too, since that is its first argument
@@ -374,7 +395,7 @@ fn led(
 
             let op = Operator::ImplicitMul;
             let (_, r_bp) = op.bp();
-            let rhs = parse_expression(lexer, r_bp, funcs)?;
+            let rhs = parse_expression(lexer, r_bp, funcs, depth)?;
 
             let span = Span::merge(*lhs.span(), *rhs.span());
             let raw_expr_kind = RawExprKind::Binary {
@@ -393,7 +414,7 @@ fn led(
             let span = *span;
             lexer.next();
 
-            let then = parse_expression(lexer, 0, funcs)?;
+            let then = parse_expression(lexer, 0, funcs, depth)?;
             if lexer.next() != Some(TokenKind::Colon) {
                 let span = span.merge(*then.span());
 
@@ -404,7 +425,7 @@ fn led(
                 ));
             }
 
-            let else_ = parse_expression(lexer, 0, funcs)?;
+            let else_ = parse_expression(lexer, 0, funcs, depth)?;
 
             // the whole conditional: condition through else branch
             let span = Span::merge(*lhs.span(), *else_.span());
@@ -431,7 +452,7 @@ fn led(
             let raw_expr_span: Span;
             if !op.is_postfix() {
                 let (_, r_bp) = op.bp();
-                let rhs = parse_expression(lexer, r_bp, funcs)?;
+                let rhs = parse_expression(lexer, r_bp, funcs, depth)?;
 
                 raw_expr_span = span.merge(*rhs.span()).merge(*lhs.span());
                 raw_expr_kind = RawExprKind::Binary {
@@ -460,15 +481,31 @@ fn parse_expression(
     lexer: &mut Lexer,
     min_bp: u8,
     funcs: &HashMap<String, UserFunction>,
+    depth: Depth,
 ) -> Result<RawExpr, ParseError> {
-    let mut lhs = nud(lexer, funcs)?;
+    let mut lhs = nud(lexer, funcs, depth)?;
+    let mut depth = depth;
 
     while let Some(token) = lexer.peek() {
         if token.left_bp() <= min_bp {
             break;
         }
 
-        lhs = led(lexer, lhs, funcs)?;
+        // this loop does not recurse, but every pass wraps lhs in another
+        // node, so the tree it leaves behind is dropped recursively later.
+        // resolve refuses anything this deep anyway, so bounding it here
+        // costs nothing and keeps the tree from being built at all
+        depth = depth.descend();
+
+        if depth.nodes_exceeded() {
+            let span = *lhs.span();
+            return Err(ParseError::new(
+                ParseErrorKind::ExpressionTooDeep,
+                Some(span),
+            ));
+        }
+
+        lhs = led(lexer, lhs, funcs, depth)?;
     }
 
     Ok(lhs)
@@ -483,7 +520,7 @@ impl RawExpr {
             return Err(ParseError::new(ParseErrorKind::EmptyExpression, None));
         }
 
-        let expr = parse_expression(&mut lexer, 0, funcs)?;
+        let expr = parse_expression(&mut lexer, 0, funcs, Depth::new())?;
 
         if let Some(token) = lexer.next_token() {
             let span;

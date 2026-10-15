@@ -2,6 +2,7 @@ use strum::IntoEnumIterator;
 
 use crate::constant::Constant;
 use crate::errors::CalcError;
+use crate::expr::Depth;
 use crate::function::Function;
 use crate::lexer::Lexer;
 use crate::raw_expr::{RawExpr, Statement};
@@ -116,18 +117,18 @@ impl Calculator {
             }
 
             Statement::Assign(name, expr) => {
-                let expr = expr.resolve(&self.vars, &self.funcs)?;
+                let expr = expr.resolve(&self.vars, &self.funcs, Depth::new())?;
 
-                let ans = expr.eval(&self.vars, &self.funcs, &mut self.cache, 0)?;
+                let ans = expr.eval(&self.vars, &self.funcs, &mut self.cache, Depth::new())?;
                 self.set_variable(&name, ans);
 
                 ans
             }
 
             Statement::Eval(expr) => {
-                let expr = expr.resolve(&self.vars, &self.funcs)?;
+                let expr = expr.resolve(&self.vars, &self.funcs, Depth::new())?;
 
-                expr.eval(&self.vars, &self.funcs, &mut self.cache, 0)?
+                expr.eval(&self.vars, &self.funcs, &mut self.cache, Depth::new())?
             }
         };
 
