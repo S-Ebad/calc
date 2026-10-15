@@ -1,116 +1,50 @@
-use std::cell::Cell;
 use std::collections::HashMap;
 
-/// The values visible to an expression, as a chain of call frames.
+/// The values visible to an expression: a call's own parameters, over the
+/// globals.
 ///
-/// Scoping here is dynamic: a body may read a name bound by any caller, not
-/// only its own parameters. Flattening that into one map per call costs a copy
-/// of every global on every call, so the frames are linked instead and a call
-/// is O(1) to set up.
-pub enum Scope<'a> {
-    Globals(&'a HashMap<String, f64>),
-
-    Frame {
-        params: &'a [String],
-        args: &'a [f64],
-        parent: &'a Scope<'a>,
-
-        // set when something read a name bound further out than this frame.
-        // such a result is not a function of the call's own arguments, so it
-        // cannot be memoised against them
-        escaped: Cell<bool>,
-    },
-}
-
-enum Binding {
-    /// found in a frame, this many frames out from where the search started
-    Frame(usize, f64),
-    Global(f64),
+/// A body sees its own parameters first and the globals otherwise. It does not
+/// see a caller's parameters: which variable a name refers to should not depend
+/// on who called, or naming a parameter would silently capture a name the
+/// callee meant to read from the globals.
+///
+/// Globals are borrowed rather than copied, so entering a call costs nothing
+/// proportional to how much is in scope.
+pub struct Scope<'a> {
+    params: &'a [String],
+    args: &'a [f64],
+    globals: &'a HashMap<String, f64>,
 }
 
 impl<'a> Scope<'a> {
-    pub fn globals(vars: &'a HashMap<String, f64>) -> Self {
-        Scope::Globals(vars)
+    pub fn globals(globals: &'a HashMap<String, f64>) -> Self {
+        Self {
+            params: &[],
+            args: &[],
+            globals,
+        }
     }
 
-    pub fn frame(params: &'a [String], args: &'a [f64], parent: &'a Scope<'a>) -> Self {
-        Scope::Frame {
+    /// The scope a call's body runs in: its own parameters over the same
+    /// globals, with the caller's parameters deliberately left behind.
+    pub fn frame(&self, params: &'a [String], args: &'a [f64]) -> Self {
+        Self {
             params,
             args,
-            parent,
-            escaped: Cell::new(false),
+            globals: self.globals,
         }
     }
 
-    /// Whether anything read past this frame while it was current.
-    pub fn escaped(&self) -> bool {
-        match self {
-            Scope::Frame { escaped, .. } => escaped.get(),
-            Scope::Globals(_) => false,
-        }
-    }
-
-    /// The argument in this frame's own slot, without a search.
-    pub fn param(&self, index: usize) -> Option<f64> {
-        match self {
-            Scope::Frame { args, .. } => args.get(index).copied(),
-            Scope::Globals(_) => None,
-        }
+    /// The argument in a given slot, without a search.
+    pub fn param(&self, slot: usize) -> Option<f64> {
+        self.args.get(slot).copied()
     }
 
     pub fn get(&self, name: &str) -> Option<f64> {
-        match self.find(name)? {
-            Binding::Global(value) => Some(value),
-
-            Binding::Frame(distance, value) => {
-                // every frame inside the one that bound the name produced a
-                // result depending on more than its own arguments. a global is
-                // not marked: assigning one already clears the cache
-                self.mark_escaped(distance);
-
-                Some(value)
-            }
+        if let Some(slot) = self.params.iter().position(|param| param == name) {
+            return Some(self.args[slot]);
         }
-    }
 
-    fn find(&self, name: &str) -> Option<Binding> {
-        let mut scope = self;
-        let mut distance = 0;
-
-        loop {
-            match scope {
-                Scope::Globals(vars) => return vars.get(name).copied().map(Binding::Global),
-
-                Scope::Frame {
-                    params,
-                    args,
-                    parent,
-                    ..
-                } => {
-                    if let Some(slot) = params.iter().position(|param| param == name) {
-                        return Some(Binding::Frame(distance, args[slot]));
-                    }
-
-                    distance += 1;
-                    scope = parent;
-                }
-            }
-        }
-    }
-
-    fn mark_escaped(&self, distance: usize) {
-        let mut scope = self;
-
-        for _ in 0..distance {
-            let Scope::Frame {
-                escaped, parent, ..
-            } = scope
-            else {
-                return;
-            };
-
-            escaped.set(true);
-            scope = parent;
-        }
+        self.globals.get(name).copied()
     }
 }

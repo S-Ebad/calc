@@ -227,9 +227,8 @@ impl Expr {
                     return Ok(*num);
                 }
 
-                // linked to the caller rather than copied out of it, so a
-                // call costs nothing proportional to how much is in scope
-                let frame = Scope::frame(func_params, &eval_args, scope);
+                // the body's own parameters over the same globals
+                let frame = scope.frame(func_params, &eval_args);
 
                 // under dynamic scoping the body can only be resolved once the
                 // arguments are known, so resolution is an eval-time step here.
@@ -242,11 +241,7 @@ impl Expr {
                     .eval(&frame, funcs, cache, depth.call())
                     .map_err(|err| err.push_frame(&key.0, func_src, span))?;
 
-                // the key is the name and the arguments, so a result that also
-                // depended on a caller's binding cannot be stored against it
-                if !frame.escaped() {
-                    cache.insert(key, result);
-                }
+                cache.insert(key, result);
 
                 Ok(result)
             }
