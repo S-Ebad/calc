@@ -1,6 +1,6 @@
 use crate::{
     errors::{ResolverError, ResolverErrorKind},
-    expr::Expr,
+    expr::{Expr, ExprKind},
     function::Function,
     operator::Operator,
     raw_expr::{RawExpr, RawExprKind},
@@ -28,13 +28,16 @@ impl RawExpr {
     where
         K: Borrow<str> + Hash + Eq,
     {
-        let expr = match self.kind {
-            RawExprKind::Number(n) => Expr::Number(n),
+        // carried onto the resolved node so eval errors can point at source too
+        let span = self.span;
+
+        let kind = match self.kind {
+            RawExprKind::Number(n) => ExprKind::Number(n),
             RawExprKind::Binary { op, lhs, rhs } => {
                 let lhs = lhs.resolve(vars, funcs)?;
                 let rhs = rhs.resolve(vars, funcs)?;
 
-                Expr::Binary {
+                ExprKind::Binary {
                     op,
                     lhs: Box::new(lhs),
                     rhs: Box::new(rhs),
@@ -43,7 +46,7 @@ impl RawExpr {
             RawExprKind::Unary { op, expr } => {
                 let expr = expr.resolve(vars, funcs)?;
 
-                Expr::Unary {
+                ExprKind::Unary {
                     op,
                     expr: Box::new(expr),
                 }
@@ -51,7 +54,7 @@ impl RawExpr {
             RawExprKind::Postfix { op, expr } => {
                 let expr = expr.resolve(vars, funcs)?;
 
-                Expr::Postfix {
+                ExprKind::Postfix {
                     op,
                     expr: Box::new(expr),
                 }
@@ -60,15 +63,15 @@ impl RawExpr {
                 if let Some(var) = vars.get(&name).cloned() {
                     if args.len() != 1 {
                         let kind = ResolverErrorKind::InvalidMultiplication { target: name, args };
-                        return Err(ResolverError::new(kind, Some(self.span)));
+                        return Err(ResolverError::new(kind, Some(span)));
                     }
 
                     let arg = args.pop().unwrap();
                     let rhs = arg.resolve(vars, funcs)?;
 
-                    let lhs = Expr::Number(var);
+                    let lhs = Expr::new(ExprKind::Number(var), span);
 
-                    Expr::Binary {
+                    ExprKind::Binary {
                         op: Operator::ImplicitMul,
                         lhs: Box::new(lhs),
                         rhs: Box::new(rhs),
@@ -79,7 +82,7 @@ impl RawExpr {
                         .map(|raw_expr| raw_expr.resolve(vars, funcs))
                         .collect::<Result<Vec<Expr>, _>>()?;
 
-                    Expr::UserCall {
+                    ExprKind::UserCall {
                         name,
                         args: resolved_args,
                     }
@@ -89,13 +92,13 @@ impl RawExpr {
                         .map(|raw_expr| raw_expr.resolve(vars, funcs))
                         .collect::<Result<Vec<_>, _>>()?;
 
-                    Expr::Call {
+                    ExprKind::Call {
                         func,
                         args: resolved_args,
                     }
                 } else {
                     let kind = ResolverErrorKind::UnknownFunction(name);
-                    return Err(ResolverError::new(kind, Some(self.span)));
+                    return Err(ResolverError::new(kind, Some(span)));
                 }
             }
 
@@ -108,7 +111,7 @@ impl RawExpr {
                 let then = then.resolve(vars, funcs)?;
                 let else_ = else_.resolve(vars, funcs)?;
 
-                Expr::If {
+                ExprKind::If {
                     condition: Box::new(condition),
                     then: Box::new(then),
                     else_: Box::new(else_),
@@ -116,7 +119,7 @@ impl RawExpr {
             }
             RawExprKind::Identifier(ident) => {
                 if let Some(var) = vars.get(&ident).cloned() {
-                    Expr::Number(var)
+                    ExprKind::Number(var)
                 } else {
                     let kind = if ident == "ans" {
                         ResolverErrorKind::UndefinedAns
@@ -124,10 +127,10 @@ impl RawExpr {
                         ResolverErrorKind::UnknownIdentifier(ident)
                     };
 
-                    return Err(ResolverError::new(kind, Some(self.span)));
+                    return Err(ResolverError::new(kind, Some(span)));
                 }
             }
-            RawExprKind::Call { func, args } => Expr::Call {
+            RawExprKind::Call { func, args } => ExprKind::Call {
                 func,
                 args: args
                     .into_iter()
@@ -147,10 +150,10 @@ impl RawExpr {
                         got: args.len(),
                     };
 
-                    return Err(ResolverError::new(kind, Some(self.span)));
+                    return Err(ResolverError::new(kind, Some(span)));
                 }
 
-                Expr::UserCall {
+                ExprKind::UserCall {
                     name,
                     args: args
                         .into_iter()
@@ -159,9 +162,9 @@ impl RawExpr {
                 }
             }
 
-            RawExprKind::Constant(constant) => Expr::Number(constant.value()),
+            RawExprKind::Constant(constant) => ExprKind::Number(constant.value()),
         };
 
-        Ok(expr)
+        Ok(Expr::new(kind, span))
     }
 }

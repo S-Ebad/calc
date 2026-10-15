@@ -1,7 +1,10 @@
 use std::{borrow::Borrow, collections::HashMap, fmt};
 
 use crate::{
-    calc::CacheKey, errors::CalcError, function::Function, operator::Operator,
+    calc::CacheKey,
+    errors::{CalcError, Span},
+    function::Function,
+    operator::Operator,
     user_function::UserFunction,
 };
 
@@ -26,7 +29,7 @@ fn to_bits(args: &[f64]) -> Vec<u64> {
 }
 
 #[derive(Debug, PartialEq, Clone)]
-pub enum Expr {
+pub enum ExprKind {
     Number(f64),
 
     Binary {
@@ -62,6 +65,40 @@ pub enum Expr {
     },
 }
 
+#[derive(Debug, PartialEq, Clone)]
+pub struct Expr {
+    pub(crate) kind: ExprKind,
+    pub(crate) span: Span,
+}
+
+impl Expr {
+    pub fn new(kind: ExprKind, span: Span) -> Self {
+        Self { kind, span }
+    }
+
+    pub fn kind(&self) -> &ExprKind {
+        &self.kind
+    }
+
+    pub fn span(&self) -> &Span {
+        &self.span
+    }
+}
+
+impl std::ops::DerefMut for Expr {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.kind
+    }
+}
+
+impl std::ops::Deref for Expr {
+    type Target = ExprKind;
+
+    fn deref(&self) -> &Self::Target {
+        &self.kind
+    }
+}
+
 impl Expr {
     pub fn eval<K>(
         self,
@@ -80,21 +117,20 @@ impl Expr {
             ));
         }
 
-        match self {
-            Expr::Number(num) => Ok(num),
-            Expr::Binary { op, lhs, rhs } => {
+        match self.kind {
+            ExprKind::Number(num) => Ok(num),
+            ExprKind::Binary { op, lhs, rhs } => {
                 let lhs = lhs.eval(vars, funcs, cache, depth)?;
                 let rhs = rhs.eval(vars, funcs, cache, depth)?;
 
                 op.perform_op(lhs, Some(rhs)).map_err(CalcError::String)
             }
-            Expr::Unary { op, expr } => op
+
+            ExprKind::Unary { op, expr } | ExprKind::Postfix { op, expr } => op
                 .perform_op(expr.eval(vars, funcs, cache, depth)?, None)
                 .map_err(CalcError::String),
-            Expr::Postfix { expr, op } => op
-                .perform_op(expr.eval(vars, funcs, cache, depth)?, None)
-                .map_err(CalcError::String),
-            Expr::Call { func, args } => {
+
+            ExprKind::Call { func, args } => {
                 let args = args
                     .into_iter()
                     .map(|expr| expr.eval(vars, funcs, cache, depth))
@@ -103,7 +139,7 @@ impl Expr {
                 func.call(&args).map_err(CalcError::String)
             }
 
-            Expr::If {
+            ExprKind::If {
                 condition: condit,
                 then,
                 else_,
@@ -115,8 +151,7 @@ impl Expr {
                 }
             }
 
-            Expr::UserCall { name, args } => {
-                // arity mismatch
+            ExprKind::UserCall { name, args } => {
                 let func = funcs.get(&name).unwrap();
                 let func_params = func.params();
 
@@ -147,6 +182,7 @@ impl Expr {
                 // TODO: Later use EvalError::Resolution
                 let new_body = func_body.resolve(&scope, funcs)?;
                 let result = new_body.eval(&scope, funcs, cache, depth + 1)?;
+
                 cache.insert(key, result);
 
                 Ok(result)
@@ -157,20 +193,26 @@ impl Expr {
 
 impl fmt::Display for Expr {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Expr::Number(n) => write!(f, "{:.2}", n),
+        write!(f, "{}", self.kind)
+    }
+}
 
-            Expr::Binary { op, lhs, rhs } => write!(f, "{} {} {}", lhs, op, rhs),
-            Expr::Unary { op, expr } | Expr::Postfix { op, expr } => {
+impl fmt::Display for ExprKind {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Number(n) => write!(f, "{:.2}", n),
+
+            Self::Binary { op, lhs, rhs } => write!(f, "{} {} {}", lhs, op, rhs),
+            Self::Unary { op, expr } | Self::Postfix { op, expr } => {
                 write!(f, "{}({})", op, expr)
             }
-            Expr::Call { func, args } => {
+            Self::Call { func, args } => {
                 write_args!(f, func, args)
             }
-            Expr::UserCall { name, args } => {
+            Self::UserCall { name, args } => {
                 write_args!(f, name, args)
             }
-            Expr::If {
+            Self::If {
                 condition,
                 then,
                 else_,
