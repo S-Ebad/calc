@@ -153,6 +153,17 @@ fn resolver_kinds() {
         resolver_kind(&session.err("x(1, 2)")),
         Some(ResolverErrorKind::InvalidMultiplication { .. })
     ));
+
+    // how many arguments a built-in takes is settled without evaluating
+    assert!(matches!(
+        resolver_kind(&err("sin(1, 2)")),
+        Some(ResolverErrorKind::BuiltinArity { got: 2, .. })
+    ));
+
+    assert!(matches!(
+        resolver_kind(&err("max(1)")),
+        Some(ResolverErrorKind::BuiltinArity { got: 1, .. })
+    ));
 }
 
 #[test]
@@ -181,11 +192,6 @@ fn eval_kinds() {
     assert!(matches!(
         eval_kind(&err("171!")),
         Some(EvalErrorKind::FactorialTooLarge(_))
-    ));
-
-    assert!(matches!(
-        eval_kind(&err("sin(1, 2)")),
-        Some(EvalErrorKind::BuiltinArity { got: 2, .. })
     ));
 
     assert!(matches!(

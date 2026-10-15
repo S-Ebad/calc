@@ -108,9 +108,10 @@ impl Function {
     pub fn call(&self, args: &[f64]) -> Result<f64, EvalErrorKind> {
         use Function as F;
 
+        // resolution rejects a wrong count before a call is ever built, so
+        // this only catches a caller reaching for this function directly
         let (min, max) = self.arity();
         if !(min..=max).contains(&args.len()) {
-            // TODO: move this to resolver. Why is this being checked during eval?
             return Err(EvalErrorKind::BuiltinArity {
                 func: *self,
                 got: args.len(),

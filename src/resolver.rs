@@ -1,5 +1,5 @@
 use crate::{
-    errors::{ResolverError, ResolverErrorKind},
+    errors::{ResolverError, ResolverErrorKind, Span},
     expr::{Depth, Expr, ExprKind},
     function::Function,
     operator::Operator,
@@ -94,6 +94,8 @@ impl RawExpr {
                         args: resolved_args,
                     }
                 } else if let Some(func) = Function::from(&name) {
+                    check_builtin_arity(func, args.len(), span)?;
+
                     let resolved_args = args
                         .into_iter()
                         .map(|raw_expr| raw_expr.resolve(scope, funcs, depth))
@@ -137,13 +139,17 @@ impl RawExpr {
                     return Err(ResolverError::new(kind, Some(span)));
                 }
             }
-            RawExprKind::Call { func, args } => ExprKind::Call {
-                func,
-                args: args
-                    .into_iter()
-                    .map(|raw_expr| raw_expr.resolve(scope, funcs, depth))
-                    .collect::<Result<Vec<Expr>, _>>()?,
-            },
+            RawExprKind::Call { func, args } => {
+                check_builtin_arity(func, args.len(), span)?;
+
+                ExprKind::Call {
+                    func,
+                    args: args
+                        .into_iter()
+                        .map(|raw_expr| raw_expr.resolve(scope, funcs, depth))
+                        .collect::<Result<Vec<Expr>, _>>()?,
+                }
+            }
 
             RawExprKind::UserCall { name, args } => {
                 // arity mismatch
@@ -182,4 +188,20 @@ impl RawExpr {
 
         Ok(Expr::new(kind, span))
     }
+}
+
+/// How many arguments a built-in takes is fixed by which built-in it is, so a
+/// wrong count is settled without evaluating anything. Checking it here means
+/// a branch that is never taken is still rejected, the same way a wrong count
+/// on a user function already is.
+fn check_builtin_arity(func: Function, got: usize, span: Span) -> Result<(), ResolverError> {
+    let (min, max) = func.arity();
+
+    if (min..=max).contains(&got) {
+        return Ok(());
+    }
+
+    let kind = ResolverErrorKind::BuiltinArity { func, got };
+
+    Err(ResolverError::new(kind, Some(span)))
 }

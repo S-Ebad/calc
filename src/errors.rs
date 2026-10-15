@@ -296,6 +296,10 @@ pub enum ResolverErrorKind {
 
     UnknownFunction(String),
     UnknownIdentifier(String),
+    BuiltinArity {
+        func: Function,
+        got: usize,
+    },
     UndefinedAns, // when 'ans' is used as the first expression (no previous answer)
     ExpressionTooDeep,
     UnboundParameter(std::rc::Rc<str>),
@@ -317,6 +321,12 @@ impl ResolverErrorKind {
                 )
             }
             ResolverErrorKind::UnknownFunction(name) => format!("unknown function '{}'", name),
+            ResolverErrorKind::BuiltinArity { func, got } => format!(
+                "function {} takes {} argument(s) but got {}",
+                func,
+                func.arity_str(),
+                got
+            ),
             ResolverErrorKind::ArityMismatch {
                 name,
                 expected,
