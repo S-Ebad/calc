@@ -95,10 +95,16 @@ impl std::ops::Deref for RawExpr {
     }
 }
 
+/// Parses a call's argument list, and reports the span it occupies.
+///
+/// The span reaches the closing parenthesis, so a caller can merge it with the
+/// callee's name to span the whole call rather than just the name. Without
+/// parentheses (i.e: sin10) there is nothing to close, so it is the lone
+/// argument's span.
 fn consume_args(
     lexer: &mut Lexer,
     funcs: &HashMap<String, UserFunction>,
-) -> Result<Vec<RawExpr>, ParseError> {
+) -> Result<(Vec<RawExpr>, Span), ParseError> {
     // no parenthesis. i.e: sin10
     let open = lexer.peek_token();
 
@@ -111,7 +117,10 @@ fn consume_args(
     };
 
     if !matches!(open.kind, TokenKind::LParen) {
-        return Ok(vec![nud(lexer, funcs)?]);
+        let arg = nud(lexer, funcs)?;
+        let span = *arg.span();
+
+        return Ok((vec![arg], span));
     }
 
     let open_span = open.span;
@@ -119,8 +128,8 @@ fn consume_args(
 
     // empty arguments. i.e: sin()
     if lexer.peek() == Some(&TokenKind::RParen) {
-        lexer.next();
-        return Ok(vec![]);
+        let close = lexer.next_token().unwrap();
+        return Ok((vec![], open_span.merge(close.span)));
     }
 
     let mut args: Vec<RawExpr> = Vec::new();
@@ -144,14 +153,16 @@ fn consume_args(
         }
     }
 
-    if !matches!(lexer.next(), Some(TokenKind::RParen)) {
+    let close = lexer.next_token();
+
+    let Some(close) = close.filter(|token| matches!(token.kind, TokenKind::RParen)) else {
         return Err(ParseError::new(
             ParseErrorKind::MissingClosingParenthesis,
             Some(open_span),
         ));
-    }
+    };
 
-    Ok(args)
+    Ok((args, open_span.merge(close.span)))
 }
 
 fn nud(lexer: &mut Lexer, funcs: &HashMap<String, UserFunction>) -> Result<RawExpr, ParseError> {
@@ -174,8 +185,8 @@ fn nud(lexer: &mut Lexer, funcs: &HashMap<String, UserFunction>) -> Result<RawEx
                 || funcs.contains_key(&name)
                 || lexer.peek() == Some(&TokenKind::LParen);
 
-            let raw_expr = if !is_func {
-                RawExprKind::Identifier(name)
+            if !is_func {
+                RawExpr::new(RawExprKind::Identifier(name), span)
             } else {
                 if matches!(lexer.peek(), Some(TokenKind::Comma | TokenKind::RParen)) {
                     let note = format!("call it with parentheses, e.g. '{name}()'");
@@ -184,18 +195,21 @@ fn nud(lexer: &mut Lexer, funcs: &HashMap<String, UserFunction>) -> Result<RawEx
                     return Err(ParseError::with_note(kind, Some(span), note));
                 }
 
-                let args = consume_args(lexer, funcs)?;
+                let (args, args_span) = consume_args(lexer, funcs)?;
 
-                if let Some(func) = Function::from(&name) {
+                // the call runs from the name through the closing parenthesis
+                let call_span = span.merge(args_span);
+
+                let raw_expr = if let Some(func) = Function::from(&name) {
                     RawExprKind::Call { func, args }
                 } else if funcs.contains_key(&name) {
                     RawExprKind::UserCall { name, args }
                 } else {
                     RawExprKind::Apply { name, args }
-                }
-            };
+                };
 
-            RawExpr::new(raw_expr, span)
+                RawExpr::new(raw_expr, call_span)
+            }
         }
 
         Some(Token {
@@ -298,9 +312,8 @@ fn led(
 
         Some(Token {
             kind: TokenKind::Dot,
-            span,
+            span: _,
         }) => {
-            let span = *span;
             lexer.next();
 
             let name = match lexer.next_token() {
@@ -325,8 +338,14 @@ fn led(
                 }
             };
 
-            let mut args = consume_args(lexer, funcs)?;
+            // taken before lhs is moved into the argument list
+            let lhs_span = *lhs.span();
+
+            let (mut args, args_span) = consume_args(lexer, funcs)?;
             args.insert(0, lhs);
+
+            // a dot-call spans its receiver too, since that is its first argument
+            let call_span = lhs_span.merge(args_span);
 
             let raw_expr_kind = if let Some(func) = Function::from(&name) {
                 RawExprKind::Call { func, args }
@@ -336,7 +355,7 @@ fn led(
                 RawExprKind::Apply { name, args }
             };
 
-            RawExpr::new(raw_expr_kind, span)
+            RawExpr::new(raw_expr_kind, call_span)
         }
 
         Some(Token {
