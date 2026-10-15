@@ -1,0 +1,121 @@
+//! User-defined functions and what may not be redefined.
+
+mod common;
+
+use common::*;
+
+#[test]
+fn multi_parameter_function() {
+    let mut calc = Calculator::new();
+    // Area of a cylinder: 2*pi*r*h + 2*pi*r^2
+    calc.solve("cylinder_area(r, h) = 2pi*r*h + 2pi*r^2")
+        .unwrap();
+    let result = calc.solve("cylinder_area(3, 5)").unwrap().unwrap();
+    let expected = round(
+        2.0 * std::f64::consts::PI * 3.0 * 5.0 + 2.0 * std::f64::consts::PI * f64::powi(3.0, 2),
+    );
+    assert_eq!(result, expected);
+}
+
+#[test]
+fn function_redefinition() {
+    let mut calc = Calculator::new();
+    calc.solve("f(x) = x + 1").unwrap();
+    assert_eq!(calc.solve("f(5)").unwrap().unwrap(), 6.0);
+
+    // Redefine f(x)
+    calc.solve("f(x) = x * 2").unwrap();
+    assert_eq!(calc.solve("f(5)").unwrap().unwrap(), 10.0);
+}
+
+#[test]
+fn nested_user_calls() {
+    let mut calc = Calculator::new();
+    calc.solve("square(x) = x * x").unwrap();
+    calc.solve("double(x) = x + x").unwrap();
+    // double(square(3)) = (3*3) + (3*3) = 18
+    assert_eq!(calc.solve("double(square(3))").unwrap().unwrap(), 18.0);
+}
+
+#[test]
+fn function_using_variables() {
+    let mut calc = Calculator::new();
+    calc.solve("k = 2").unwrap();
+    calc.solve("f(x) = k * x").unwrap();
+    assert_eq!(calc.solve("f(10)").unwrap().unwrap(), 20.0);
+
+    // Changing k should change the result of the function call
+    calc.solve("k = 5").unwrap();
+    assert_eq!(calc.solve("f(10)").unwrap().unwrap(), 50.0);
+}
+
+#[test]
+fn arity_mismatch() {
+    let mut calc = Calculator::new();
+    calc.solve("f(x, y) = x + y").unwrap();
+    // Too few arguments
+    assert!(calc.solve("f(1)").is_err());
+    // Too many arguments
+    assert!(calc.solve("f(1, 2, 3)").is_err());
+}
+
+#[test]
+fn illegal_parameter_definition() {
+    // Parameters must be identifiers, not numbers or expressions
+    assert!(solve_is_err("f(10) = 10 * 2"));
+}
+
+#[test]
+fn implicit_mul() {
+    let mut calc = Calculator::new();
+    calc.solve("f(x) = 2x").unwrap();
+
+    assert_eq!(calc.solve("f5").unwrap().unwrap(), 10.0);
+    assert_eq!(calc.solve("2f5").unwrap().unwrap(), 20.0);
+}
+
+#[test]
+fn test_function_composition() {
+    let mut calc = Calculator::new();
+    calc.solve("f(x) = 10x").unwrap();
+    calc.solve("g(x) = 20x").unwrap();
+
+    assert_eq!(calc.solve("f(g(10))").unwrap().unwrap(), 2000.0);
+}
+
+#[test]
+fn invalid_redefinition() {
+    let mut calc = Calculator::new();
+
+    //ans is a reserved keyword
+    assert!(calc.solve("ans = 50").is_err());
+
+    // constants are reserved
+    assert!(calc.solve("pi = 13").is_err());
+    assert!(calc.solve("e = 13").is_err());
+    assert!(calc.solve("inf = 13").is_err());
+    assert!(calc.solve("true = 1").is_err());
+    assert!(calc.solve("false = 1").is_err());
+
+    //sin is a built-in global
+    assert!(calc.solve("sin(x) = 50x").is_err());
+    assert!(calc.solve("cos(x, y, z) = 50x").is_err());
+
+    // u can't make functions variables. It'll just break during parsing
+    assert!(calc.solve("sin = 10").is_err());
+
+    // same with user-defined functions
+    calc.solve("f(x) = 2x").unwrap();
+    assert!(calc.solve("f = 10").is_err());
+
+    //weird quirk, u can't use defined functions as parameters
+    calc.solve("g(x) = 2x").unwrap();
+    //this is because parameters & arguments are parsed the same way. So when it sees "g" it
+    //thinks It's a function & tries to parse it.
+    assert!(calc.solve("h(g) = 2g").is_err());
+
+    // this is fine with variables though
+    calc.solve("x = 10").unwrap();
+    calc.solve("f(x) = 10x").unwrap();
+    assert_eq!(calc.solve("f(2)").unwrap().unwrap(), 20.0);
+}
