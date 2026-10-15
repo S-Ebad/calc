@@ -272,3 +272,29 @@ fn functions_composed() {
     assert_eq!(solve("min(ceil(2.1), floor(3.9))"), 3.0);
     assert_eq!(solve("sqrt(pow(3, 2) + pow(4, 2))"), 5.0); // pythagorean
 }
+
+#[test]
+fn clamp() {
+    assert_eq!(solve("clamp(5, 1, 10)"), 5.0);
+    assert_eq!(solve("clamp(-3, 1, 10)"), 1.0);
+    assert_eq!(solve("clamp(42, 1, 10)"), 10.0);
+    assert_eq!(solve("clamp(1, 1, 1)"), 1.0);
+
+    // an inverted range has no answer to give
+    assert!(solve_is_err("clamp(1, 10, 1)"));
+}
+
+#[test]
+fn gcd() {
+    assert_eq!(solve("gcd(12, 18)"), 6.0);
+    assert_eq!(solve("gcd(18, 12)"), 6.0);
+    assert_eq!(solve("gcd(7, 13)"), 1.0);
+    assert_eq!(solve("gcd(9, 9)"), 9.0);
+}
+
+#[test]
+fn lcm() {
+    assert_eq!(solve("lcm(4, 6)"), 12.0);
+    assert_eq!(solve("lcm(3, 5)"), 15.0);
+    assert_eq!(solve("lcm(8, 8)"), 8.0);
+}

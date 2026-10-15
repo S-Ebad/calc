@@ -64,3 +64,13 @@ fn inf_arithmetic() {
     assert_eq!(solve("-inf - 1"), f64::NEG_INFINITY);
     assert!(solve_is_err("inf - inf"));
 }
+
+#[test]
+fn tau_and_phi() {
+    approx(solve("tau"), std::f64::consts::TAU);
+    approx(solve("tau / 2"), std::f64::consts::PI);
+
+    approx(solve("phi"), 1.618_033_988_749_895);
+    // phi squared is phi plus one
+    approx(solve("phi^2 - phi"), 1.0);
+}
