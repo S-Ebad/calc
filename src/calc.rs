@@ -31,9 +31,11 @@ impl Calculator {
     }
 
     pub fn set_variable(&mut self, name: &str, value: f64) {
-        // dynamic scoping screws with the cache because the variable could be in a function
-        // then the cached result would actually be wrong
-        if name != "ans" {
+        // a function body reads a global when it is called, not when it is
+        // written, so a cached result may depend on this name without the key
+        // saying so. only the functions that actually read it are at risk,
+        // which is what keeps 'ans' from clearing the cache after every answer
+        if self.funcs.values().any(|func| func.reads(name)) {
             self.cache.clear();
         }
 
@@ -41,8 +43,9 @@ impl Calculator {
     }
 
     pub fn set_user_function(&mut self, function: UserFunction) {
-        // clear cache for redefined functions
-        self.cache.retain(|(name, _), _| name != function.name());
+        // not just this function's own entries: anything that called it cached
+        // a result computed from the body being replaced
+        self.cache.clear();
 
         self.funcs.insert(function.name().to_owned(), function);
     }

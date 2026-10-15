@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::fmt;
 
 use crate::{
@@ -13,6 +14,10 @@ pub struct UserFunction {
     // the input line this was defined on. the body's spans index into it, so a
     // diagnostic raised inside the body needs this text to render against
     src: String,
+
+    // names the body reads that it does not bind itself. a cached result
+    // depends on these, and nothing in the cache key records that
+    free: HashSet<String>,
 }
 
 impl UserFunction {
@@ -41,11 +46,15 @@ impl UserFunction {
 
         bind_params(&mut body, &params);
 
+        let mut free = HashSet::new();
+        collect_free(&body, &mut free);
+
         Ok(Self {
             name,
             params,
             body,
             src,
+            free,
         })
     }
 
@@ -77,6 +86,11 @@ impl UserFunction {
 
     pub fn src(&self) -> &str {
         &self.src
+    }
+
+    /// Whether the body reads this name from outside its own parameters.
+    pub fn reads(&self, name: &str) -> bool {
+        self.free.contains(name)
     }
 }
 
@@ -125,6 +139,54 @@ fn bind_params(expr: &mut RawExpr, params: &[String]) {
         | RawExprKind::UserCall { args, .. } => {
             for arg in args {
                 bind_params(arg, params);
+            }
+        }
+
+        RawExprKind::Number(_) | RawExprKind::Constant(_) | RawExprKind::Param { .. } => (),
+    }
+}
+
+/// Gather the names a body reads that it does not bind itself.
+///
+/// Runs after the parameters have been bound to slots, so every remaining
+/// identifier is free by construction. An applied name is included too, since
+/// it is a variable whenever one of that name exists.
+fn collect_free(expr: &RawExpr, free: &mut HashSet<String>) {
+    match &expr.kind {
+        RawExprKind::Identifier(name) => {
+            free.insert(name.clone());
+        }
+
+        RawExprKind::Apply { name, args } => {
+            free.insert(name.clone());
+
+            for arg in args {
+                collect_free(arg, free);
+            }
+        }
+
+        RawExprKind::Binary { lhs, rhs, .. } => {
+            collect_free(lhs, free);
+            collect_free(rhs, free);
+        }
+
+        RawExprKind::Unary { expr, .. } | RawExprKind::Postfix { expr, .. } => {
+            collect_free(expr, free)
+        }
+
+        RawExprKind::If {
+            condition,
+            then,
+            else_,
+        } => {
+            collect_free(condition, free);
+            collect_free(then, free);
+            collect_free(else_, free);
+        }
+
+        RawExprKind::Call { args, .. } | RawExprKind::UserCall { args, .. } => {
+            for arg in args {
+                collect_free(arg, free);
             }
         }
 
