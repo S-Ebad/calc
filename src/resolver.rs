@@ -1,179 +1,178 @@
 use crate::{
-    expr::Expr, function::Function, operator::Operator, raw_expr::RawExpr,
+    errors::{ResolverError, ResolverErrorKind},
+    expr::{Depth, Expr, ExprKind},
+    function::Function,
+    operator::Operator,
+    raw_expr::{RawExpr, RawExprKind},
     user_function::UserFunction,
 };
 use std::{borrow::Borrow, collections::HashMap, hash::Hash};
-
-#[macro_export]
-macro_rules! err_fmt {
-    ($fmt:literal, $($arg:expr),* $(,)?) => {
-        Err(format!($fmt, $($arg),*))
-    };
-
-    ($fmt:expr) => {
-        Err($fmt.to_string())
-    };
-}
-
-macro_rules! err_ident {
-    ($ident:expr) => {{
-        if $ident == "ans" {
-            Err("Resolver Error: ans not yet defined".to_string())
-        } else {
-            err_fmt!("Resolver Error: unknown identifier '{}'", $ident)
-        }
-    }};
-}
 
 impl RawExpr {
     pub fn resolve<K>(
         self,
         vars: &HashMap<K, f64>,
         funcs: &HashMap<String, UserFunction>,
-    ) -> Result<Expr, String>
+        depth: Depth,
+    ) -> Result<Expr, ResolverError>
     where
         K: Borrow<str> + Hash + Eq,
     {
-        let expr = match self {
-            RawExpr::Number(n) => Expr::Number(n),
-            RawExpr::Binary { op, lhs, rhs } => {
-                let lhs = lhs.resolve(vars, funcs)?;
-                let rhs = rhs.resolve(vars, funcs)?;
+        // carried onto the resolved node so eval errors can point at source too
+        let span = self.span;
 
-                Expr::Binary {
+        // resolve descends the tree, so it grows the native stack the same way
+        // eval does, and under dynamic scoping it runs beneath eval's frames
+        if depth.nodes_exceeded() {
+            let kind = ResolverErrorKind::ExpressionTooDeep;
+            return Err(ResolverError::new(kind, Some(span)));
+        }
+
+        let depth = depth.descend();
+
+        let kind = match self.kind {
+            RawExprKind::Number(n) => ExprKind::Number(n),
+            RawExprKind::Binary { op, lhs, rhs } => {
+                let lhs = lhs.resolve(vars, funcs, depth)?;
+                let rhs = rhs.resolve(vars, funcs, depth)?;
+
+                ExprKind::Binary {
                     op,
                     lhs: Box::new(lhs),
                     rhs: Box::new(rhs),
                 }
             }
-            RawExpr::Unary { op, expr } => {
-                let expr = expr.resolve(vars, funcs)?;
+            RawExprKind::Unary { op, expr } => {
+                let expr = expr.resolve(vars, funcs, depth)?;
 
-                Expr::Unary {
+                ExprKind::Unary {
                     op,
                     expr: Box::new(expr),
                 }
             }
-            RawExpr::Postfix { op, expr } => {
-                let expr = expr.resolve(vars, funcs)?;
+            RawExprKind::Postfix { op, expr } => {
+                let expr = expr.resolve(vars, funcs, depth)?;
 
-                Expr::Postfix {
+                ExprKind::Postfix {
                     op,
                     expr: Box::new(expr),
                 }
             }
-            RawExpr::Apply { name, mut args } => {
+            RawExprKind::Apply { name, mut args } => {
                 if let Some(var) = vars.get(&name).cloned() {
                     if args.len() != 1 {
-                        return err_fmt!(
-                            "Resolver Error: cannot multiply {} by multiple expressions ({})",
-                            name,
-                            args.into_iter()
-                                .map(|x| x.to_string())
-                                .collect::<Vec<_>>()
-                                .join(", ")
-                        );
+                        let kind = ResolverErrorKind::InvalidMultiplication { target: name, args };
+                        return Err(ResolverError::new(kind, Some(span)));
                     }
 
                     let arg = args.pop().unwrap();
-                    let rhs = arg.resolve(vars, funcs)?;
+                    let rhs = arg.resolve(vars, funcs, depth)?;
 
-                    let lhs = Expr::Number(var);
+                    let lhs = Expr::new(ExprKind::Number(var), span);
 
-                    Expr::Binary {
+                    ExprKind::Binary {
                         op: Operator::ImplicitMul,
                         lhs: Box::new(lhs),
                         rhs: Box::new(rhs),
                     }
                 } else if let Some(user_func) = funcs.get(&name) {
                     if user_func.arity() != args.len() {
-                        return err_fmt!(
-                            "Resolver Error: function {} takes {} argument(s) but got {}",
-                            user_func,
-                            user_func.params().len(),
-                            args.len()
-                        );
+                        let kind = ResolverErrorKind::ArityMismatch {
+                            name: user_func.to_string(),
+                            expected: user_func.arity(),
+                            got: args.len(),
+                        };
+
+                        return Err(ResolverError::new(kind, Some(span)));
                     }
 
                     let resolved_args = args
                         .into_iter()
-                        .map(|raw_expr| raw_expr.resolve(vars, funcs))
+                        .map(|raw_expr| raw_expr.resolve(vars, funcs, depth))
                         .collect::<Result<Vec<Expr>, _>>()?;
 
-                    Expr::UserCall {
+                    ExprKind::UserCall {
                         name,
                         args: resolved_args,
                     }
                 } else if let Some(func) = Function::from(&name) {
                     let resolved_args = args
                         .into_iter()
-                        .map(|raw_expr| raw_expr.resolve(vars, funcs))
+                        .map(|raw_expr| raw_expr.resolve(vars, funcs, depth))
                         .collect::<Result<Vec<_>, _>>()?;
 
-                    Expr::Call {
+                    ExprKind::Call {
                         func,
                         args: resolved_args,
                     }
                 } else {
-                    return err_fmt!("Resolver Error: unknown function '{}'", name);
+                    let kind = ResolverErrorKind::UnknownFunction(name);
+                    return Err(ResolverError::new(kind, Some(span)));
                 }
             }
 
-            RawExpr::If {
+            RawExprKind::If {
                 condition,
                 then,
                 else_,
             } => {
-                let condition = condition.resolve(vars, funcs)?;
-                let then = then.resolve(vars, funcs)?;
-                let else_ = else_.resolve(vars, funcs)?;
+                let condition = condition.resolve(vars, funcs, depth)?;
+                let then = then.resolve(vars, funcs, depth)?;
+                let else_ = else_.resolve(vars, funcs, depth)?;
 
-                Expr::If {
+                ExprKind::If {
                     condition: Box::new(condition),
                     then: Box::new(then),
                     else_: Box::new(else_),
                 }
             }
-            RawExpr::Identifier(ident) => {
+            RawExprKind::Identifier(ident) => {
                 if let Some(var) = vars.get(&ident).cloned() {
-                    Expr::Number(var)
+                    ExprKind::Number(var)
                 } else {
-                    return err_ident!(ident);
+                    let kind = if ident == "ans" {
+                        ResolverErrorKind::UndefinedAns
+                    } else {
+                        ResolverErrorKind::UnknownIdentifier(ident)
+                    };
+
+                    return Err(ResolverError::new(kind, Some(span)));
                 }
             }
-            RawExpr::Call { func, args } => Expr::Call {
+            RawExprKind::Call { func, args } => ExprKind::Call {
                 func,
                 args: args
                     .into_iter()
-                    .map(|raw_expr| raw_expr.resolve(vars, funcs))
+                    .map(|raw_expr| raw_expr.resolve(vars, funcs, depth))
                     .collect::<Result<Vec<Expr>, _>>()?,
             },
 
-            RawExpr::UserCall { name, args } => {
+            RawExprKind::UserCall { name, args } => {
                 // arity mismatch
                 let func = funcs.get(&name).unwrap();
 
                 if func.arity() != args.len() {
-                    return err_fmt!(
-                        "Resolver Error: function {} takes {} argument(s) but got {}",
-                        func,
-                        func.arity(),
-                        args.len()
-                    );
+                    let kind = ResolverErrorKind::ArityMismatch {
+                        name: func.to_string(),
+                        expected: func.arity(),
+                        got: args.len(),
+                    };
+
+                    return Err(ResolverError::new(kind, Some(span)));
                 }
 
-                Expr::UserCall {
+                ExprKind::UserCall {
                     name,
                     args: args
                         .into_iter()
-                        .map(|raw_expr| raw_expr.resolve(vars, funcs))
+                        .map(|raw_expr| raw_expr.resolve(vars, funcs, depth))
                         .collect::<Result<Vec<Expr>, _>>()?,
                 }
             }
 
-            RawExpr::Constant(constant) => Expr::Number(constant.value()),
+            RawExprKind::Constant(constant) => ExprKind::Number(constant.value()),
         };
 
-        Ok(expr)
+        Ok(Expr::new(kind, span))
     }
 }

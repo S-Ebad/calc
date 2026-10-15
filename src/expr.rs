@@ -1,6 +1,12 @@
 use std::{borrow::Borrow, collections::HashMap, fmt};
 
-use crate::{calc::CacheKey, function::Function, operator::Operator, user_function::UserFunction};
+use crate::{
+    calc::CacheKey,
+    errors::{EvalError, EvalErrorKind, Span},
+    function::Function,
+    operator::Operator,
+    user_function::UserFunction,
+};
 
 #[macro_export]
 macro_rules! write_args {
@@ -22,8 +28,57 @@ fn to_bits(args: &[f64]) -> Vec<u64> {
     args.iter().map(|x| x.to_bits()).collect()
 }
 
+/// How far into a user call, and how far into the native stack.
+///
+/// `calls` bounds how deeply user functions may nest; it is the limit a
+/// runaway recursion is expected to hit. `nodes` counts every recursive
+/// descent in resolve and eval, which is what the real stack grows by. The
+/// second is needed because the two multiply: resolving and evaluating a
+/// body happens underneath the eval frames of every call above it, so a
+/// modest body depth at a modest call depth still overflows.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct Depth {
+    calls: u32,
+    nodes: u32,
+}
+
+impl Depth {
+    // a body 12 deep at 99 calls already aborts, while a flat expression
+    // survives past 800, so the ceiling is well under the shallowest of those
+    const MAX_CALLS: u32 = 100;
+    const MAX_NODES: u32 = 512;
+
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// One step further down an expression tree.
+    pub fn descend(self) -> Self {
+        Self {
+            nodes: self.nodes + 1,
+            ..self
+        }
+    }
+
+    /// One step further into a user function body.
+    pub fn call(self) -> Self {
+        Self {
+            calls: self.calls + 1,
+            nodes: self.nodes + 1,
+        }
+    }
+
+    pub fn calls_exceeded(&self) -> bool {
+        self.calls >= Self::MAX_CALLS
+    }
+
+    pub fn nodes_exceeded(&self) -> bool {
+        self.nodes >= Self::MAX_NODES
+    }
+}
+
 #[derive(Debug, PartialEq, Clone)]
-pub enum Expr {
+pub enum ExprKind {
     Number(f64),
 
     Binary {
@@ -59,42 +114,89 @@ pub enum Expr {
     },
 }
 
+#[derive(Debug, PartialEq, Clone)]
+pub struct Expr {
+    pub(crate) kind: ExprKind,
+    pub(crate) span: Span,
+}
+
+impl Expr {
+    pub fn new(kind: ExprKind, span: Span) -> Self {
+        Self { kind, span }
+    }
+
+    pub fn kind(&self) -> &ExprKind {
+        &self.kind
+    }
+
+    pub fn span(&self) -> &Span {
+        &self.span
+    }
+}
+
+impl std::ops::DerefMut for Expr {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.kind
+    }
+}
+
+impl std::ops::Deref for Expr {
+    type Target = ExprKind;
+
+    fn deref(&self) -> &Self::Target {
+        &self.kind
+    }
+}
+
 impl Expr {
     pub fn eval<K>(
         self,
         vars: &HashMap<K, f64>,
         funcs: &HashMap<String, UserFunction>,
         cache: &mut HashMap<CacheKey, f64>,
-        depth: u32,
-    ) -> Result<f64, String>
+        depth: Depth,
+    ) -> Result<f64, EvalError>
     where
         K: Borrow<str>,
     {
+        // operator.rs and function.rs have no spans to offer; this is the layer
+        // that knows where the expression came from, so it attaches them
+        let span = self.span;
+        let at_span = |kind| EvalError::new(kind, Some(span));
 
-        if depth >= 100 {
-            return Err("Eval Error: recursion limit has been reached".to_string())
+        if depth.calls_exceeded() {
+            return Err(at_span(EvalErrorKind::RecursionLimit));
         }
 
-        match self {
-            Expr::Number(num) => Ok(num),
-            Expr::Binary { op, lhs, rhs } => {
+        if depth.nodes_exceeded() {
+            return Err(at_span(EvalErrorKind::ExpressionTooDeep));
+        }
+
+        let depth = depth.descend();
+
+        match self.kind {
+            ExprKind::Number(num) => Ok(num),
+            ExprKind::Binary { op, lhs, rhs } => {
                 let lhs = lhs.eval(vars, funcs, cache, depth)?;
                 let rhs = rhs.eval(vars, funcs, cache, depth)?;
 
-                op.perform_op(lhs, Some(rhs))
+                op.perform_op(lhs, Some(rhs)).map_err(at_span)
             }
-            Expr::Unary { op, expr } => op.perform_op(expr.eval(vars, funcs, cache, depth)?, None),
-            Expr::Postfix { expr, op } => op.perform_op(expr.eval(vars, funcs, cache, depth)?, None),
-            Expr::Call { func, args } => {
+
+            ExprKind::Unary { op, expr } | ExprKind::Postfix { op, expr } => op
+                .perform_op(expr.eval(vars, funcs, cache, depth)?, None)
+                .map_err(at_span),
+
+            ExprKind::Call { func, args } => {
                 let args = args
                     .into_iter()
                     .map(|expr| expr.eval(vars, funcs, cache, depth))
                     .collect::<Result<Vec<f64>, _>>()?;
 
-                func.call(&args)
+                func.call(&args).map_err(at_span)
             }
 
-            Expr::If {
+            ExprKind::If {
                 condition: condit,
                 then,
                 else_,
@@ -106,10 +208,12 @@ impl Expr {
                 }
             }
 
-            Expr::UserCall { name, args } => {
-                // arity mismatch
+            ExprKind::UserCall { name, args } => {
                 let func = funcs.get(&name).unwrap();
                 let func_params = func.params();
+
+                // borrowed, not cloned: only the error path needs the source
+                let func_src = func.src();
 
                 let func_body = func.body().clone();
 
@@ -122,7 +226,7 @@ impl Expr {
 
                 // cache hit
                 if let Some(num) = cache.get(&key) {
-                    return Ok(*num)
+                    return Ok(*num);
                 }
 
                 let mut scope = func_params
@@ -135,8 +239,17 @@ impl Expr {
                     scope.entry(key.borrow()).or_insert(*val);
                 }
 
-                let new_body = func_body.clone().resolve(&scope, funcs)?;
-                let result = new_body.eval(&scope, funcs, cache, depth+1)?;
+                // under dynamic scoping the body can only be resolved once the
+                // arguments are known, so resolution is an eval-time step here.
+                // either step can fail inside the body, so both record the call
+                let new_body = func_body
+                    .resolve(&scope, funcs, depth)
+                    .map_err(|err| EvalError::from(err).push_frame(&key.0, func_src, span))?;
+
+                let result = new_body
+                    .eval(&scope, funcs, cache, depth.call())
+                    .map_err(|err| err.push_frame(&key.0, func_src, span))?;
+
                 cache.insert(key, result);
 
                 Ok(result)
@@ -147,20 +260,26 @@ impl Expr {
 
 impl fmt::Display for Expr {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Expr::Number(n) => write!(f, "{:.2}", n),
+        write!(f, "{}", self.kind)
+    }
+}
 
-            Expr::Binary { op, lhs, rhs } => write!(f, "{} {} {}", lhs, op, rhs),
-            Expr::Unary { op, expr } | Expr::Postfix { op, expr } => {
+impl fmt::Display for ExprKind {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Number(n) => write!(f, "{:.2}", n),
+
+            Self::Binary { op, lhs, rhs } => write!(f, "{} {} {}", lhs, op, rhs),
+            Self::Unary { op, expr } | Self::Postfix { op, expr } => {
                 write!(f, "{}({})", op, expr)
             }
-            Expr::Call { func, args } => {
+            Self::Call { func, args } => {
                 write_args!(f, func, args)
             }
-            Expr::UserCall { name, args } => {
+            Self::UserCall { name, args } => {
                 write_args!(f, name, args)
             }
-            Expr::If {
+            Self::If {
                 condition,
                 then,
                 else_,

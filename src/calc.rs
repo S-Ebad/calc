@@ -1,10 +1,11 @@
 use strum::IntoEnumIterator;
 
 use crate::constant::Constant;
+use crate::errors::CalcError;
+use crate::expr::Depth;
 use crate::function::Function;
 use crate::lexer::Lexer;
-use crate::operator::Operator;
-use crate::raw_expr::RawExpr;
+use crate::raw_expr::{RawExpr, Statement};
 use crate::user_function::UserFunction;
 
 use std::collections::HashMap;
@@ -17,12 +18,6 @@ pub struct Calculator {
     vars: HashMap<String, f64>,
     funcs: HashMap<String, UserFunction>,
     cache: HashMap<CacheKey, f64>,
-}
-
-enum ExprKind {
-    FuncDef(UserFunction),
-    Assign(String, RawExpr),
-    Eval(RawExpr),
 }
 
 impl Calculator {
@@ -84,7 +79,10 @@ impl Calculator {
         } else if let Some(constant) = Constant::from(name) {
             constant.help()
         } else {
-            &format!("No help found for '{}'. Type 'help' to see available functions and constants.", name)
+            &format!(
+                "No help found for '{}'. Type 'help' to see available functions and constants.",
+                name
+            )
         };
 
         println!("{}", help_str);
@@ -94,12 +92,12 @@ impl Calculator {
         s.is_empty() || s.chars().all(|c| c.is_alphabetic() || c == '_')
     }
 
-    pub fn solve(&mut self, buf: &str) -> Result<Option<f64>, String> {
+    pub fn solve(&mut self, buf: &str) -> Result<Option<f64>, CalcError> {
         if let Some(rest) = buf.strip_prefix("help") {
             let rest = rest.trim();
 
             if Self::is_valid_help_name(rest) {
-                self.help(rest.trim());
+                self.help(rest);
 
                 return Ok(None);
             }
@@ -109,26 +107,28 @@ impl Calculator {
         let expr = RawExpr::parse(lexer, &self.funcs)?;
         expr.check_errors()?;
 
-        let ans = match Self::classify(expr)? {
-            ExprKind::FuncDef(user_function) => {
+        let stmt = expr.classify(buf)?;
+
+        let ans = match stmt {
+            Statement::FuncDef(user_function) => {
                 self.set_user_function(user_function);
 
                 return Ok(None);
             }
 
-            ExprKind::Assign(name, expr) => {
-                let expr = expr.resolve(&self.vars, &self.funcs)?;
+            Statement::Assign(name, expr) => {
+                let expr = expr.resolve(&self.vars, &self.funcs, Depth::new())?;
 
-                let ans = expr.eval(&self.vars, &self.funcs, &mut self.cache, 0)?;
+                let ans = expr.eval(&self.vars, &self.funcs, &mut self.cache, Depth::new())?;
                 self.set_variable(&name, ans);
 
                 ans
             }
 
-            ExprKind::Eval(expr) => {
-                let expr = expr.resolve(&self.vars, &self.funcs)?;
+            Statement::Eval(expr) => {
+                let expr = expr.resolve(&self.vars, &self.funcs, Depth::new())?;
 
-                expr.eval(&self.vars, &self.funcs, &mut self.cache, 0)?
+                expr.eval(&self.vars, &self.funcs, &mut self.cache, Depth::new())?
             }
         };
 
@@ -136,30 +136,6 @@ impl Calculator {
         self.set_variable("ans", ans);
 
         Ok(Some(ans))
-    }
-
-    fn classify(expr: RawExpr) -> Result<ExprKind, String> {
-        match expr {
-            RawExpr::Binary {
-                op: Operator::Equal,
-                lhs,
-                rhs,
-            } => match *lhs {
-                RawExpr::Apply { name, args } | RawExpr::UserCall { name, args } => {
-                    Ok(ExprKind::FuncDef(UserFunction::new(name, args, rhs)?))
-                }
-
-                RawExpr::Identifier(ident) => Ok(ExprKind::Assign(ident, *rhs)),
-
-                lhs => Ok(ExprKind::Eval(RawExpr::Binary {
-                    op: Operator::Equal,
-                    lhs: Box::new(lhs),
-                    rhs,
-                })),
-            },
-
-            other => Ok(ExprKind::Eval(other)),
-        }
     }
 }
 

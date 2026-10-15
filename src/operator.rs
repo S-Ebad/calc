@@ -1,4 +1,4 @@
-use crate::err_fmt;
+use crate::errors::EvalErrorKind;
 
 macro_rules! to_bool {
     ($b:expr) => {
@@ -88,14 +88,15 @@ impl Operator {
     }
 
     // perform operator. It'll perform the operator depending on if num2 is supplied or not
-    pub fn perform_op(&self, num1: f64, num2: Option<f64>) -> Result<f64, String> {
+    // the caller owns the span, so only the error kind comes back from here
+    pub fn perform_op(&self, num1: f64, num2: Option<f64>) -> Result<f64, EvalErrorKind> {
         match num2 {
             Some(num2) => self.perform_infix(num1, num2),
             None => self.perform_postfix_prefix(num1),
         }
     }
 
-    fn perform_postfix_prefix(&self, num1: f64) -> Result<f64, String> {
+    fn perform_postfix_prefix(&self, num1: f64) -> Result<f64, EvalErrorKind> {
         use Operator as OP;
 
         match self {
@@ -103,7 +104,7 @@ impl Operator {
             OP::Neg => Ok(-num1),
             OP::Fac => factorial(num1),
 
-            _ => err_fmt!("Eval Error: {} is not a postfix/prefix operator", self),
+            _ => Err(EvalErrorKind::NotPrefixOrPostfix(*self)),
         }
     }
 
@@ -111,7 +112,7 @@ impl Operator {
         matches!(self, Self::Fac)
     }
 
-    fn perform_infix(&self, num1: f64, num2: f64) -> Result<f64, String> {
+    fn perform_infix(&self, num1: f64, num2: f64) -> Result<f64, EvalErrorKind> {
         use Operator as OP;
 
         let result = match self {
@@ -122,11 +123,10 @@ impl Operator {
 
             OP::Div => {
                 if num2 == 0f64 {
-                    return err_fmt!(
-                        "Eval Error: {}/{} is undefined (division by zero)",
-                        num1,
-                        num2
-                    );
+                    return Err(EvalErrorKind::DivisionByZero {
+                        lhs: num1,
+                        rhs: num2,
+                    });
                 }
 
                 num1 / num2
@@ -135,12 +135,10 @@ impl Operator {
             OP::Pow => {
                 // num1 ^ -num2 where num1 is 0 is undefined
                 if num1 == 0f64 && num2 < 0f64 {
-                    return err_fmt!(
-                        "Eval Error: {0}^{1} is undefined (division by zero: 1/{0}^{2})",
-                        num1,
-                        num2,
-                        num2.abs()
-                    );
+                    return Err(EvalErrorKind::ZeroToNegativePower {
+                        base: num1,
+                        exp: num2,
+                    });
                 }
 
                 f64::powf(num1, num2)
@@ -156,16 +154,16 @@ impl Operator {
             OP::And => to_bool!(is_true!(num1) && is_true!(num2)),
             OP::Or => to_bool!(is_true!(num1) || is_true!(num2)),
 
-            OP::Equal => {
-                return Err(
-                    "Eval Error: '=' can only be used at the top level for assignment".to_string(),
-                );
-            }
+            OP::Equal => return Err(EvalErrorKind::AssignmentNotAtTopLevel),
             _ => unreachable!(),
         };
 
         if result.is_nan() {
-            return err_fmt!("Eval Error: {} {} {} is undefined", num1, self, num2);
+            return Err(EvalErrorKind::UndefinedBinary {
+                lhs: num1,
+                op: *self,
+                rhs: num2,
+            });
         }
 
         Ok(result)
@@ -202,13 +200,13 @@ impl std::fmt::Display for Operator {
     }
 }
 
-fn factorial(n: f64) -> Result<f64, String> {
+fn factorial(n: f64) -> Result<f64, EvalErrorKind> {
     if n < 0.0 || n.fract() != 0.0 {
-        return err_fmt!("Eval Error: factorial is undefined for {}", n);
+        return Err(EvalErrorKind::FactorialUndefined(n));
     }
 
     if n > 170.0 {
-        return err_fmt!("Eval Error: {}! is too large (max is 170!)", n);
+        return Err(EvalErrorKind::FactorialTooLarge(n));
     }
 
     Ok((1..=n as u64).map(|x| x as f64).product())

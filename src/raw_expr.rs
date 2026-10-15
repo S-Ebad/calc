@@ -1,8 +1,9 @@
 use crate::{
     constant::Constant,
-    err_fmt,
+    errors::{ParseError, ParseErrorKind, Span},
+    expr::Depth,
     function::Function,
-    lexer::{Lexer, Token},
+    lexer::{Lexer, Token, TokenKind},
     operator::Operator,
     user_function::UserFunction,
     write_args,
@@ -11,7 +12,7 @@ use crate::{
 use std::{collections::HashMap, fmt};
 
 #[derive(Debug, PartialEq, Clone)]
-pub enum RawExpr {
+pub enum RawExprKind {
     Number(f64),
     Constant(Constant),
     Identifier(String),
@@ -55,98 +56,264 @@ pub enum RawExpr {
     },
 }
 
+#[derive(Debug, PartialEq, Clone)]
+pub struct RawExpr {
+    pub(crate) kind: RawExprKind,
+    pub(crate) span: Span,
+}
+
+pub enum Statement {
+    FuncDef(UserFunction),
+    Assign(String, RawExpr),
+    Eval(RawExpr),
+}
+
+impl RawExpr {
+    pub fn new(kind: RawExprKind, span: Span) -> Self {
+        Self { kind, span }
+    }
+
+    pub fn kind(&self) -> &RawExprKind {
+        &self.kind
+    }
+
+    pub fn span(&self) -> &Span {
+        &self.span
+    }
+}
+
+impl std::ops::DerefMut for RawExpr {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.kind
+    }
+}
+
+impl std::ops::Deref for RawExpr {
+    type Target = RawExprKind;
+
+    fn deref(&self) -> &Self::Target {
+        &self.kind
+    }
+}
+
+/// Parses a call's argument list, and reports the span it occupies.
+///
+/// The span reaches the closing parenthesis, so a caller can merge it with the
+/// callee's name to span the whole call rather than just the name. Without
+/// parentheses (i.e: sin10) there is nothing to close, so it is the lone
+/// argument's span.
 fn consume_args(
     lexer: &mut Lexer,
     funcs: &HashMap<String, UserFunction>,
-) -> Result<Vec<RawExpr>, String> {
+    depth: Depth,
+) -> Result<(Vec<RawExpr>, Span), ParseError> {
     // no parenthesis. i.e: sin10
-    if lexer.peek() != Some(&Token::LParen) {
-        return Ok(vec![nud(lexer, funcs)?]);
+    let open = lexer.peek_token();
+
+    let Some(open) = open else {
+        let span = Span::new(lexer.end_pos(), lexer.end_pos());
+        return Err(ParseError::new(
+            ParseErrorKind::UnexpectedEndOfInput,
+            Some(span),
+        ));
+    };
+
+    if !matches!(open.kind, TokenKind::LParen) {
+        let arg = nud(lexer, funcs, depth)?;
+        let span = *arg.span();
+
+        return Ok((vec![arg], span));
     }
 
+    let open_span = open.span;
     lexer.next();
 
     // empty arguments. i.e: sin()
-    if lexer.peek() == Some(&Token::RParen) {
-        lexer.next();
-        return Ok(vec![]);
+    if lexer.peek() == Some(&TokenKind::RParen) {
+        let close = lexer.next_token().unwrap();
+        return Ok((vec![], open_span.merge(close.span)));
     }
 
     let mut args: Vec<RawExpr> = Vec::new();
 
     loop {
-        args.push(parse_expression(lexer, 0, funcs)?);
+        args.push(parse_expression(lexer, 0, funcs, depth)?);
 
-        if lexer.peek() == Some(&Token::Comma) {
-            lexer.next();
+        if lexer.peek() == Some(&TokenKind::Comma) {
+            let comma = lexer.next_token();
+
+            // trailing comma
+            if matches!(lexer.peek(), Some(&TokenKind::RParen)) {
+                return Err(ParseError::with_note(
+                    ParseErrorKind::TrailingComma,
+                    Some(comma.unwrap().span),
+                    "remove the ',' or add another argument/parameter".to_string(),
+                ));
+            }
         } else {
             break;
         }
     }
 
-    if !matches!(lexer.next(), Some(Token::RParen)) {
-        return Err("Parse Error: missing closing parenthesis ')'".to_string());
-    }
+    let close = lexer.next_token();
 
-    Ok(args)
+    let Some(close) = close.filter(|token| matches!(token.kind, TokenKind::RParen)) else {
+        return Err(ParseError::new(
+            ParseErrorKind::MissingClosingParenthesis,
+            Some(open_span),
+        ));
+    };
+
+    Ok((args, open_span.merge(close.span)))
 }
 
-fn nud(lexer: &mut Lexer, funcs: &HashMap<String, UserFunction>) -> Result<RawExpr, String> {
-    let expr = match lexer.next() {
-        Some(Token::Number(num)) => RawExpr::Number(num),
-        Some(Token::Constant(constant)) => RawExpr::Constant(constant),
-        Some(Token::Identifier(name)) => {
+fn nud(
+    lexer: &mut Lexer,
+    funcs: &HashMap<String, UserFunction>,
+    depth: Depth,
+) -> Result<RawExpr, ParseError> {
+    // nesting recurses here: a group, an argument list or a unary chain each
+    // re-enter nud, so the native stack grows with how deeply they nest. a
+    // flat left-associative chain loops in parse_expression instead and is
+    // deliberately not bounded by this
+    if depth.nodes_exceeded() {
+        let span = Span::new(lexer.end_pos(), lexer.end_pos());
+        return Err(ParseError::new(
+            ParseErrorKind::ExpressionTooDeep,
+            Some(span),
+        ));
+    }
+
+    let depth = depth.descend();
+
+    // unary plus is a no-op: it builds nothing, so a run of them collapses
+    // here rather than costing a frame and a descent each
+    while matches!(lexer.peek(), Some(TokenKind::Operator(Operator::Add))) {
+        lexer.next();
+    }
+
+    let expr = match lexer.next_token() {
+        Some(Token {
+            kind: TokenKind::Number(num),
+            span,
+        }) => RawExpr::new(RawExprKind::Number(num), span),
+
+        Some(Token {
+            kind: TokenKind::Constant(constant),
+            span,
+        }) => RawExpr::new(RawExprKind::Constant(constant), span),
+
+        Some(Token {
+            kind: TokenKind::Identifier(name),
+            span,
+        }) => {
             let is_func = Function::from(&name).is_some()
                 || funcs.contains_key(&name)
-                || lexer.peek() == Some(&Token::LParen);
+                || lexer.peek() == Some(&TokenKind::LParen);
 
             if !is_func {
-                RawExpr::Identifier(name)
+                RawExpr::new(RawExprKind::Identifier(name), span)
             } else {
-                if matches!(lexer.peek(), Some(Token::Comma | Token::RParen)) {
-                    return err_fmt!("Parse Error: '{}' is a function, not a value", name);
+                if matches!(lexer.peek(), Some(TokenKind::Comma | TokenKind::RParen)) {
+                    let note = format!("call it with parentheses, e.g. '{name}()'");
+                    let kind = ParseErrorKind::FunctionUsedAsValue(name);
+
+                    return Err(ParseError::with_note(kind, Some(span), note));
                 }
 
-                let args = consume_args(lexer, funcs)?;
+                let (args, args_span) = consume_args(lexer, funcs, depth)?;
 
-                if let Some(func) = Function::from(&name) {
-                    RawExpr::Call { func, args }
+                // the call runs from the name through the closing parenthesis
+                let call_span = span.merge(args_span);
+
+                let raw_expr = if let Some(func) = Function::from(&name) {
+                    RawExprKind::Call { func, args }
                 } else if funcs.contains_key(&name) {
-                    RawExpr::UserCall { name, args }
+                    RawExprKind::UserCall { name, args }
                 } else {
-                    RawExpr::Apply { name, args }
+                    RawExprKind::Apply { name, args }
+                };
+
+                RawExpr::new(raw_expr, call_span)
+            }
+        }
+
+        Some(Token {
+            kind: TokenKind::LParen,
+            span,
+        }) => {
+            let lhs: RawExpr = parse_expression(lexer, 0, funcs, depth)?;
+
+            match lexer.next_token() {
+                Some(Token {
+                    kind: TokenKind::RParen,
+                    span: token_span,
+                }) => {
+                    let new_span = Span::merge(span, token_span);
+
+                    RawExpr::new(lhs.kind, new_span)
+                }
+
+                Some(other) if matches!(other.kind, TokenKind::Comma) => {
+                    let span = *other.span();
+                    let kind = ParseErrorKind::ExpectedClosingParenthesis(other);
+
+                    return Err(ParseError::with_note(
+                        kind,
+                        Some(span),
+                        "multiple expressions aren't supported".into(),
+                    ));
+                }
+
+                Some(other) => {
+                    let span = *other.span();
+                    let kind = ParseErrorKind::ExpectedClosingParenthesis(other);
+
+                    return Err(ParseError::new(kind, Some(span)));
+                }
+
+                None => {
+                    return Err(ParseError::new(
+                        ParseErrorKind::MissingClosingParenthesis,
+                        Some(span),
+                    ));
                 }
             }
         }
 
-        Some(Token::LParen) => {
-            let lhs: RawExpr = parse_expression(lexer, 0, funcs)?;
+        Some(Token {
+            kind: TokenKind::Operator(Operator::Sub),
+            span,
+        }) => {
+            // negation does build a node, so a chain of them (i.e --x) is
+            // real depth and stays bounded by the budget
+            let expr = nud(lexer, funcs, depth)?;
 
-            if lexer.next() != Some(Token::RParen) {
-                return Err("Parse Error: missing closing parenthesis ')'".to_string());
-            }
-
-            lhs
-        }
-
-        Some(Token::Operator(op @ (Operator::Sub | Operator::Add))) => {
-            let unary = if op == Operator::Sub {
-                Operator::Neg
-            } else {
-                return nud(lexer, funcs);
+            let raw_expr_kind = RawExprKind::Unary {
+                op: Operator::Neg,
+                expr: Box::new(expr),
             };
 
-            // for chained unary (i.e --x)
-            let expr = nud(lexer, funcs)?;
-
-            RawExpr::Unary {
-                op: unary,
-                expr: Box::new(expr),
-            }
+            RawExpr::new(raw_expr_kind, span)
         }
 
-        Some(token) => return err_fmt!("Parse Error: '{}' Cannot start an expression", token),
-        None => return Err("Parse Error: unexpected end of input".to_string()),
+        Some(token) => {
+            let span = token.span;
+
+            return Err(ParseError::new(
+                ParseErrorKind::CannotStartExpression(token),
+                Some(span),
+            ));
+        }
+
+        None => {
+            let span = Span::new(lexer.end_pos(), lexer.end_pos());
+            return Err(ParseError::with_note(
+                ParseErrorKind::UnexpectedEndOfInput,
+                Some(span),
+                "expected an expression after this".to_string(),
+            ));
+        }
     };
 
     Ok(expr)
@@ -156,85 +323,153 @@ fn led(
     lexer: &mut Lexer,
     lhs: RawExpr,
     funcs: &HashMap<String, UserFunction>,
-) -> Result<RawExpr, String> {
-    let expr = match lexer.peek() {
-        // Expression is done. Stop parsing
-        Some(Token::RParen | Token::Comma) => lhs,
-        Some(Token::Dot) => {
+    depth: Depth,
+) -> Result<RawExpr, ParseError> {
+    let token = lexer.peek_token();
+    let expr = match token {
+        Some(Token {
+            kind: TokenKind::RParen | TokenKind::Comma,
+            span: _,
+        }) => lhs,
+
+        Some(Token {
+            kind: TokenKind::Dot,
+            span: _,
+        }) => {
             lexer.next();
 
-            let name = match lexer.next() {
-                Some(Token::Identifier(name)) => name,
-                Some(other) => return err_fmt!("Parse Error: expected method name after '.', got {}", other),
-                None => return err_fmt!("Parse Error: expected method name after '.', got Nothing"),
+            let name = match lexer.next_token() {
+                Some(Token {
+                    kind: TokenKind::Identifier(name),
+                    ..
+                }) => name,
+                Some(other) => {
+                    let span = other.span;
+                    let kind = ParseErrorKind::ExpectedMethodName(Some(other));
+
+                    return Err(ParseError::new(kind, Some(span)));
+                }
+
+                None => {
+                    let span = Span::new(lexer.end_pos(), lexer.end_pos());
+
+                    return Err(ParseError::new(
+                        ParseErrorKind::ExpectedMethodName(None),
+                        Some(span),
+                    ));
+                }
             };
-            
-            let mut args = consume_args(lexer, funcs)?;
+
+            // taken before lhs is moved into the argument list
+            let lhs_span = *lhs.span();
+
+            let (mut args, args_span) = consume_args(lexer, funcs, depth)?;
             args.insert(0, lhs);
 
-            if let Some(func) = Function::from(&name) {
-                RawExpr::Call { func, args }
+            // a dot-call spans its receiver too, since that is its first argument
+            let call_span = lhs_span.merge(args_span);
+
+            let raw_expr_kind = if let Some(func) = Function::from(&name) {
+                RawExprKind::Call { func, args }
             } else if funcs.contains_key(&name) {
-                RawExpr::UserCall { name, args }
+                RawExprKind::UserCall { name, args }
             } else {
-                RawExpr::Apply { name, args }
-            }
+                RawExprKind::Apply { name, args }
+            };
+
+            RawExpr::new(raw_expr_kind, call_span)
         }
 
-        Some(
-            token @ (Token::LParen | Token::Identifier(_) | Token::Number(_) | Token::Constant(_)),
-        ) => {
-            if matches!(token, &Token::Number(_)) && matches!(lhs, RawExpr::Number(_)) {
-                return Err("Parse Error: missing operator between expression".to_string());
+        Some(Token {
+            kind:
+                token @ (TokenKind::LParen
+                | TokenKind::Identifier(_)
+                | TokenKind::Number(_)
+                | TokenKind::Constant(_)),
+            span,
+        }) => {
+            if matches!(token, TokenKind::Number(_)) && matches!(lhs.kind, RawExprKind::Number(_)) {
+                let span = span.merge(*lhs.span());
+
+                return Err(ParseError::new(ParseErrorKind::MissingOperator, Some(span)));
             }
 
             let op = Operator::ImplicitMul;
             let (_, r_bp) = op.bp();
-            let rhs = parse_expression(lexer, r_bp, funcs)?;
+            let rhs = parse_expression(lexer, r_bp, funcs, depth)?;
 
-            RawExpr::Binary {
+            let span = Span::merge(*lhs.span(), *rhs.span());
+            let raw_expr_kind = RawExprKind::Binary {
                 op,
                 lhs: Box::new(lhs),
                 rhs: Box::new(rhs),
-            }
+            };
+
+            RawExpr::new(raw_expr_kind, span)
         }
 
-        Some(Token::QuestionMark) => {
+        Some(Token {
+            kind: TokenKind::QuestionMark,
+            span,
+        }) => {
+            let span = *span;
             lexer.next();
 
-            let then = parse_expression(lexer, 0, funcs)?;
-            if lexer.next() != Some(Token::Colon) {
-                return Err("Parse Error: expected colon ':' after '?' ".to_string());
+            let then = parse_expression(lexer, 0, funcs, depth)?;
+            if lexer.next() != Some(TokenKind::Colon) {
+                let span = span.merge(*then.span());
+
+                return Err(ParseError::with_note(
+                    ParseErrorKind::ExpectedColonAfterQuestionMark,
+                    Some(span),
+                    "add a ':' followed by the else expression".into(),
+                ));
             }
 
-            let else_ = parse_expression(lexer, 0, funcs)?;
+            let else_ = parse_expression(lexer, 0, funcs, depth)?;
 
-            RawExpr::If {
+            // the whole conditional: condition through else branch
+            let span = Span::merge(*lhs.span(), *else_.span());
+
+            let raw_expr_kind = RawExprKind::If {
                 condition: Box::new(lhs),
                 then: Box::new(then),
                 else_: Box::new(else_),
-            }
+            };
+
+            RawExpr::new(raw_expr_kind, span)
         }
 
-        Some(Token::Operator(op)) => {
+        Some(Token {
+            kind: TokenKind::Operator(op),
+            span,
+        }) => {
             let op = *op;
+            let span = *span;
+
             lexer.next();
 
+            let raw_expr_kind: RawExprKind;
+            let raw_expr_span: Span;
             if !op.is_postfix() {
                 let (_, r_bp) = op.bp();
-                let rhs = parse_expression(lexer, r_bp, funcs)?;
+                let rhs = parse_expression(lexer, r_bp, funcs, depth)?;
 
-                RawExpr::Binary {
+                raw_expr_span = span.merge(*rhs.span()).merge(*lhs.span());
+                raw_expr_kind = RawExprKind::Binary {
                     op,
                     lhs: Box::new(lhs),
                     rhs: Box::new(rhs),
                 }
             } else {
-                RawExpr::Postfix {
+                raw_expr_span = span.merge(*lhs.span());
+                raw_expr_kind = RawExprKind::Postfix {
                     op,
                     expr: Box::new(lhs),
-                }
+                };
             }
+
+            RawExpr::new(raw_expr_kind, raw_expr_span)
         }
 
         _ => unreachable!(),
@@ -247,15 +482,31 @@ fn parse_expression(
     lexer: &mut Lexer,
     min_bp: u8,
     funcs: &HashMap<String, UserFunction>,
-) -> Result<RawExpr, String> {
-    let mut lhs = nud(lexer, funcs)?;
+    depth: Depth,
+) -> Result<RawExpr, ParseError> {
+    let mut lhs = nud(lexer, funcs, depth)?;
+    let mut depth = depth;
 
     while let Some(token) = lexer.peek() {
         if token.left_bp() <= min_bp {
             break;
         }
 
-        lhs = led(lexer, lhs, funcs)?;
+        // this loop does not recurse, but every pass wraps lhs in another
+        // node, so the tree it leaves behind is dropped recursively later.
+        // resolve refuses anything this deep anyway, so bounding it here
+        // costs nothing and keeps the tree from being built at all
+        depth = depth.descend();
+
+        if depth.nodes_exceeded() {
+            let span = *lhs.span();
+            return Err(ParseError::new(
+                ParseErrorKind::ExpressionTooDeep,
+                Some(span),
+            ));
+        }
+
+        lhs = led(lexer, lhs, funcs, depth)?;
     }
 
     Ok(lhs)
@@ -265,45 +516,75 @@ impl RawExpr {
     pub fn parse(
         mut lexer: Lexer,
         funcs: &HashMap<String, UserFunction>,
-    ) -> Result<RawExpr, String> {
+    ) -> Result<RawExpr, ParseError> {
         if lexer.is_empty() {
-            return Err("Parse Error: no expression to parse".to_string());
+            return Err(ParseError::new(ParseErrorKind::EmptyExpression, None));
         }
 
-        let expr = parse_expression(&mut lexer, 0, funcs)?;
+        let expr = parse_expression(&mut lexer, 0, funcs, Depth::new())?;
 
-        if let Some(token) = lexer.peek() {
-            return Err(if matches!(token, Token::RParen) {
-                "Parse Error: unexpected closing parenthesis ')'".to_string()
+        if let Some(token) = lexer.next_token() {
+            let span;
+            let kind = if matches!(token.kind, TokenKind::RParen) {
+                span = token.span;
+
+                ParseErrorKind::ExtraClosingParenthesis
             } else {
-                format!("Parse Error: unexpected token: {}", token)
-            });
+                span = token.span;
+
+                ParseErrorKind::UnexpectedToken(token)
+            };
+
+            return Err(ParseError::new(kind, Some(span)));
         }
 
         Ok(expr)
     }
 
-    pub fn check_errors(&self) -> Result<(), String> {
-        if let RawExpr::Binary {
+    pub fn check_errors(&self) -> Result<(), ParseError> {
+        if let RawExprKind::Binary {
             op: Operator::Equal,
             lhs,
             rhs: _,
-        } = self
+        } = &self.kind
         {
             match lhs.as_ref() {
-                RawExpr::Apply { name, .. } | RawExpr::Identifier(name) if name == "ans" => {
-                    return Err("Parse Error: 'ans' is a reserved read-only variable".to_string());
+                RawExpr {
+                    kind: RawExprKind::Apply { name, .. } | RawExprKind::Identifier(name),
+                    ..
+                } if name == "ans" => {
+                    let kind = ParseErrorKind::InvalidAssignmentTarget("ans".into());
+
+                    return Err(ParseError::with_note(
+                        kind,
+                        Some(*lhs.span()),
+                        "'ans' always holds the last result and can't be reassigned".into(),
+                    ));
                 }
 
-                RawExpr::Constant(constant) => {
-                    return err_fmt!("Parse Error: attempt to redefine constant '{}'", constant);
+                RawExpr {
+                    kind: RawExprKind::Constant(constant),
+                    ..
+                } => {
+                    let kind = ParseErrorKind::InvalidAssignmentTarget(constant.to_string());
+
+                    return Err(ParseError::with_note(
+                        kind,
+                        Some(*lhs.span()),
+                        "constants can't be redefined".to_string(),
+                    ));
                 }
 
-                RawExpr::Call { func, .. } => {
-                    return err_fmt!(
-                        "Parse Error: attempt to redefine built-in function '{}'",
-                        func
-                    );
+                RawExpr {
+                    kind: RawExprKind::Call { func, .. },
+                    ..
+                } => {
+                    let kind = ParseErrorKind::InvalidAssignmentTarget(func.to_string());
+                    return Err(ParseError::with_note(
+                        kind,
+                        Some(*lhs.span()),
+                        "built-in functions can't be redefined".to_string(),
+                    ));
                 }
 
                 _ => (),
@@ -312,48 +593,93 @@ impl RawExpr {
 
         Ok(())
     }
+
+    pub fn classify(self, src: &str) -> Result<Statement, ParseError> {
+        match self {
+            RawExpr {
+                kind:
+                    RawExprKind::Binary {
+                        op: crate::operator::Operator::Equal,
+                        lhs,
+                        rhs,
+                    },
+                span,
+            } => match &lhs.kind {
+                RawExprKind::Apply { .. } | RawExprKind::UserCall { .. } => {
+                    let (RawExprKind::Apply { name, args } | RawExprKind::UserCall { name, args }) =
+                        lhs.kind
+                    else {
+                        unreachable!()
+                    };
+
+                    let function = UserFunction::new(name, args, rhs, src.to_owned())?;
+
+                    Ok(Statement::FuncDef(function))
+                }
+
+                RawExprKind::Identifier(_) => {
+                    let RawExprKind::Identifier(ident) = lhs.kind else {
+                        unreachable!()
+                    };
+
+                    Ok(Statement::Assign(ident, *rhs))
+                }
+
+                _ => Ok(Statement::Eval(RawExpr::new(
+                    RawExprKind::Binary {
+                        op: crate::operator::Operator::Equal,
+                        lhs,
+                        rhs,
+                    },
+                    span,
+                ))),
+            },
+
+            other => Ok(Statement::Eval(other)),
+        }
+    }
 }
 
-impl fmt::Display for RawExpr {
+impl fmt::Display for RawExprKind {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            RawExpr::Number(n) => write!(f, "{}", n),
-            RawExpr::Identifier(ident) => write!(f, "{}", ident),
-            RawExpr::Binary { op, lhs, rhs } => {
+            Self::Number(n) => write!(f, "{}", n),
+            Self::Identifier(ident) => write!(f, "{}", ident),
+            Self::Binary { op, lhs, rhs } => {
                 let (my_left, my_right) = op.bp();
 
-                let lhs_str = match lhs.as_ref() {
-                    RawExpr::Binary { op: child_op, .. } if child_op.bp().0 <= my_left => {
-                        format!("({})", lhs)
+                let lhs_str = match lhs.kind {
+                    Self::Binary { op: child_op, .. } if child_op.bp().0 <= my_left => {
+                        format!("({})", lhs.kind)
                     }
-                    _ => format!("{}", lhs),
+                    _ => format!("{}", lhs.kind),
                 };
 
-                let rhs_str = match rhs.as_ref() {
-                    RawExpr::Binary { op: child_op, .. } if child_op.bp().0 < my_right => {
-                        format!("({})", rhs)
+                let rhs_str = match rhs.kind {
+                    Self::Binary { op: child_op, .. } if child_op.bp().0 < my_right => {
+                        format!("({})", rhs.kind)
                     }
-                    _ => format!("{}", rhs),
+                    _ => format!("{}", rhs.kind),
                 };
 
                 write!(f, "{} {} {}", lhs_str, op, rhs_str)
             }
-            RawExpr::Unary { op, expr } => {
-                write!(f, "{}({})", op, expr)
+            Self::Unary { op, expr } => {
+                write!(f, "{}({})", op, expr.kind)
             }
-            RawExpr::Postfix { op, expr } => {
-                write!(f, "({}){}", expr, op)
+            Self::Postfix { op, expr } => {
+                write!(f, "({}){}", expr.kind, op)
             }
-            RawExpr::If {
+            Self::If {
                 condition,
                 then,
                 else_,
-            } => write!(f, "{} ? {} : {}", condition, then, else_),
+            } => write!(f, "{} ? {} : {}", condition.kind, then.kind, else_.kind),
 
-            RawExpr::Apply { name, args } => write_args!(f, name, args),
-            RawExpr::Call { func, args } => write_args!(f, func, args),
-            RawExpr::UserCall { name, args } => write_args!(f, name, args),
-            RawExpr::Constant(constant) => write!(f, "{}", constant),
+            Self::Apply { name, args } => write_args!(f, name, args),
+            Self::Call { func, args } => write_args!(f, func, args),
+            Self::UserCall { name, args } => write_args!(f, name, args),
+            Self::Constant(constant) => write!(f, "{}", constant),
         }
     }
 }
