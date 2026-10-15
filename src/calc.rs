@@ -92,19 +92,31 @@ impl Calculator {
         println!("{}", help_str);
     }
 
+    /// What a line is asking for help with, if it is asking at all.
+    ///
+    /// The word has to stand on its own. Letters running straight on from it
+    /// are one identifier, so 'helpme' is a name like any other rather than a
+    /// request for help with 'me'.
+    fn help_argument(buf: &str) -> Option<&str> {
+        let line = buf.trim();
+        let rest = line.strip_prefix("help")?;
+
+        if rest.is_empty() {
+            return Some(rest);
+        }
+
+        rest.starts_with(char::is_whitespace).then(|| rest.trim())
+    }
+
     fn is_valid_help_name(s: &str) -> bool {
         s.is_empty() || s.chars().all(|c| c.is_alphabetic() || c == '_')
     }
 
     pub fn solve(&mut self, buf: &str) -> Result<Option<f64>, CalcError> {
-        if let Some(rest) = buf.strip_prefix("help") {
-            let rest = rest.trim();
+        if let Some(rest) = Self::help_argument(buf).filter(|rest| Self::is_valid_help_name(rest)) {
+            self.help(rest);
 
-            if Self::is_valid_help_name(rest) {
-                self.help(rest);
-
-                return Ok(None);
-            }
+            return Ok(None);
         }
 
         let lexer = Lexer::new(buf)?;

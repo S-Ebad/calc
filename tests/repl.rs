@@ -24,10 +24,37 @@ fn an_assignment_returns_its_value() {
 fn help_is_accepted_in_its_various_forms() {
     let mut calc = Calculator::new();
 
-    // the listing, a built-in, a constant, and a name that is none of those
-    for line in ["help", "help ", "help sin", "help pi", "help nosuchthing"] {
+    // the listing, a built-in, a constant, a name that is none of those, and
+    // the word reached past surrounding whitespace
+    for line in [
+        "help",
+        "help ",
+        "  help  ",
+        "help sin",
+        "  help pi",
+        "help nosuchthing",
+    ] {
         assert_eq!(calc.solve(line).unwrap(), None, "{:?}", line);
     }
+}
+
+/// The word has to stand on its own. Letters running straight on from it are
+/// one identifier, not a request for help with what follows.
+#[test]
+fn help_run_together_with_a_name_is_an_identifier() {
+    let mut session = Session::new();
+
+    assert!(matches!(
+        resolver_kind(&session.err("helpme")),
+        Some(ResolverErrorKind::UnknownIdentifier(name)) if name == "helpme"
+    ));
+
+    assert!(session.is_err("help_x"));
+
+    // and so it can be used as one
+    session.ok("helpme = 7");
+    assert_eq!(session.value("helpme"), 7.0);
+    assert_eq!(session.value("helpme * 2"), 14.0);
 }
 
 #[test]
