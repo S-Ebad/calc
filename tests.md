@@ -6,40 +6,92 @@ Run the test suite with:
 cargo test
 ```
 
-## Test Modules
+## Layout
 
-### Arithmetic
-Covers the core operators (`+`, `-`, `*`, `/`, `%`, `^`), operator precedence, parentheses, right-associativity of `^`, floating-point precision (e.g. `0.1 + 0.2 = 0.3`), repeated addition precision, chained/mixed operations, large numbers, negative results, nth roots via `sqrt(x, n)`, modulo with decimals, and factorial overflow.
+Each file in `tests/` is its own test binary, so a failure in one area is
+reported on its own rather than alongside everything else. Shared helpers live
+in `tests/common/`, which is a directory so that it is not collected as a test
+of its own; every file pulls it in with `mod common;`.
 
-### Unary
-Covers unary `+` and `-`, double negation (`--5`), unary operators inside expressions (`10 + -3`, `10 - -3`), and unary negation combined with built-in functions (`abs -5`, `floor -3.2`).
+The helpers are a `Session` that keeps state across lines the way the REPL
+does, `solve`/`render` for one-off expressions, and `lexer_kind`, `parse_kind`,
+`resolver_kind` and `eval_kind` for reaching the typed kind behind an error.
 
-### Postfix
-Covers factorial (`!`) for valid inputs including `0!` and `1!`, error cases for factorial on negatives and non-integers, and factorial inside larger expressions.
+## Files
 
-### Constants
-Covers `pi`, `e`, `inf`, `true`, and `false` in expressions, implicit multiplication (`2pi`, `2e`, `2true`, `5false`), scientific notation vs Euler's number disambiguation (`9e` vs `9e2`), implicit function calls (`sin pi`), implicit chaining (`pi sin pi`), and `inf` arithmetic including the `inf - inf` NaN error.
+### arithmetic
+The core operators (`+`, `-`, `*`, `/`, `%`, `^`), precedence, parentheses,
+right-associativity of `^`, floating-point precision (`0.1 + 0.2 = 0.3`),
+chained and mixed operations, large numbers, and negative results.
 
-### Variable
-Covers variable assignment, reassignment, multiple variables in one expression, the `ans` variable persisting across calls, `ans` chaining, uninitialized `ans` error, unknown variable errors, variables in complex expressions (implicit mul, Pythagorean), and error isolation (`ans` not wiped on failed eval).
+### unary
+Prefix `+` and `-`, double negation, unary operators inside expressions, unary
+negation applied to built-ins, and the postfix factorial including `0!`,
+non-integer and negative inputs, and overflow past `170!`.
 
-### Function
-Covers all built-in functions: sin, cos, tan, sqrt, nth root, atan2, abs, floor, ceil, round, int, etc (check [features](features.md) for more). Also covers Pythagorean identity, inverse round-trips (asin(sin(x)), ln(exp(x))), and composed function calls
+### constants
+`pi`, `e`, `inf`, `true`, `false`, `tau` and `phi`, implicit multiplication
+(`2pi`), scientific notation against Euler's number (`9e` vs `9e2`), implicit
+function application (`sin pi`), and `inf` arithmetic.
 
-### Logical Operators
-Covers equality (`==`, `!=`), comparison (`<`, `>`, `<=`, `>=`), boolean logic (`&&`, `||`) with `true`/`false` and numeric truthiness, and operator precedence (arithmetic > comparison > logical).
+### variables
+Assignment, reassignment, several variables in one expression, `ans` across
+calls, `ans` chaining, and the errors for an uninitialised `ans` or an unknown
+name.
 
-### Ternary
-Covers basic true/false branch selection, ternary with comparison conditions, nested ternary expressions, and complex expressions in branches including arithmetic and function calls.
+### builtins
+Every built-in function, including `clamp`, `gcd` and `lcm`. Also identities
+and round-trips: the Pythagorean identity, `asin(sin(x))`, `ln(exp(x))`, and
+composed calls.
 
-### Error
-Covers expected error conditions: division by zero, `0^negative`, `recip(0)`, mismatched parentheses, empty input, invalid tokens (`@`, `#`, `$`), missing operators, `tan` at asymptotes, `sqrt(-1)`, `ln(-1)`, invalid multi-argument applicatio on variable, and calling an undefined function.
+### user_functions
+Definition and invocation, several parameters, redefinition, nested calls,
+arity mismatches, illegal parameters, implicit multiplication with a user
+function, composition, and what may not be redefined (`ans`, constants and
+built-ins).
 
-### Validation
-Covers `check_errors()`, blocks redefinition of ans, constants (pi, e, inf, true, false), and built-in functions (sin, cos). Also covers the parameter shadowing restriction (user-defined function names cannot be used as parameters) and confirms variable names can be reused as parameters without issue.
+### scoping
+What a name in a body refers to: a parameter shadowing a global, a global read
+at call time, a global defined *after* the function that reads it, a caller's
+parameters deliberately out of reach, parameter order, and a parameter used as
+a multiplicand or a dot-call receiver.
 
-### User Functions
-Covers definition and invocation, multi-parameter functions, function redefinition, nested user function calls, functions referencing global variables, dynamic scoping (global variable changes affect function output at call time), arity mismatch errors (too few and too many args), illegal parameter definitions, implicit multiplication with user functions (`f5`, `2f5`), and function composition (`f(g(x))`).
+### caching
+Memoisation, and everything that has to invalidate it: redefining a function,
+changing a global that a body reads, and an answer a body depends on. Also
+what must *not* discard it, since clearing too eagerly would make memoisation
+pointless.
 
-### UFCS
-Covers basic method-style calls on integer and float literals (`10.max(5)`), no-arg calls (`9.sqrt()`), chained calls (`10.max(5).min(3)`), correct disambiguation between decimal points and method dots (`10.5.max(5)` still parses `10.5` as the number), exponent literals followed by a call (`9e2.max(5)`), UFCS with user-defined functions (including multi-arg and chained), and error cases for malformed numbers that were previously masked by greedy dot/exponent consumption (`10.`, `9e9e9`, `9e9.2`).
+### logic
+Equality and comparison, boolean operators with `true`/`false` and numeric
+truthiness, precedence between arithmetic, comparison and logic, and the
+conditional operator including nesting and expressions in either branch.
+
+### ufcs
+Method-style calls on literals and user functions, no-argument and chained
+calls, and the lexing this has to stay clear of: a decimal point against a
+method dot (`10.5.max(5)`), an exponent followed by a call (`9e2.max(5)`), and
+the malformed numbers that greedy consumption used to mask (`10.`, `9e9e9`).
+
+### errors
+Inputs that have to be rejected, asserted behaviourally: division by zero,
+`0^negative`, `recip(0)`, mismatched parentheses, empty input, invalid tokens,
+missing operators, `tan` at an asymptote, `sqrt(-1)`, `ln(-1)`, and calling
+something undefined.
+
+### diagnostics
+What an error *reports*, rather than that one happened. The stage and the kind
+for every failure the pipeline can produce, so a regression cannot quietly
+change stage; and the rendered output, since a span that drifts is invisible
+to a kind assertion — the carets under a call, a note beside them, and a frame
+per call for a failure raised inside a function body.
+
+### limits
+The shapes that used to exhaust the native stack: a long flat chain, deep
+parentheses, a deep body at depth, long runs of `+` and `-`, and runaway
+recursion. A regression here does not fail an assertion, it aborts the test
+runner, which is the only way to catch what these guard against.
+
+### repl
+The driver rather than an expression: what a definition returns, the forms
+`help` accepts, and an answer surviving a failed line.

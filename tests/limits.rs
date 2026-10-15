@@ -20,7 +20,11 @@ fn a_long_flat_chain_is_reported() {
 fn deeply_nested_parentheses_are_reported() {
     let expr = format!("{}1{}", "(".repeat(5_000), ")".repeat(5_000));
 
-    assert!(solve_is_err(&expr));
+    // the parser refuses it before anything deeper runs
+    assert!(matches!(
+        parse_kind(&err(&expr)),
+        Some(ParseErrorKind::ExpressionTooDeep)
+    ));
 }
 
 /// Nesting and call depth multiply: a body well within reach on its own is
@@ -31,7 +35,13 @@ fn a_body_within_reach_is_still_bounded_at_depth() {
     session.ok(&format!("f(x) = x > 0 ? f(x - 1){} : 0", "+1".repeat(40)));
 
     assert_eq!(session.value("f(2)"), 80.0);
-    assert!(session.is_err("f(70)"));
+
+    // the body parsed on its own, so this is only reachable once the frames
+    // of every call beneath it are counted as well
+    assert!(matches!(
+        eval_kind(&session.err("f(70)")),
+        Some(EvalErrorKind::Resolution(_))
+    ));
 }
 
 #[test]

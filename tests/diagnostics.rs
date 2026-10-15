@@ -70,6 +70,29 @@ fn parse_kinds() {
         parse_kind(&err("2 .")),
         Some(ParseErrorKind::ExpectedMethodName(None))
     ));
+
+    assert!(matches!(
+        parse_kind(&err("2 .5x")),
+        Some(ParseErrorKind::ExpectedMethodName(Some(_)))
+    ));
+
+    // a group holding something other than one expression
+    assert!(matches!(
+        parse_kind(&err("(1, 2)")),
+        Some(ParseErrorKind::ExpectedClosingParenthesis(_))
+    ));
+
+    // a token that cannot begin one
+    assert!(matches!(
+        parse_kind(&err("*5")),
+        Some(ParseErrorKind::CannotStartExpression(_))
+    ));
+
+    // and one left over after a complete expression
+    assert!(matches!(
+        parse_kind(&err("1 , 2")),
+        Some(ParseErrorKind::UnexpectedToken(_))
+    ));
 }
 
 #[test]
