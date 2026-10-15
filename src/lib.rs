@@ -8,4 +8,5 @@ pub mod operator;
 pub mod poschars;
 pub mod raw_expr;
 pub mod resolver;
+pub mod scope;
 pub mod user_function;

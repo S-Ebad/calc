@@ -6,6 +6,7 @@ use crate::expr::Depth;
 use crate::function::Function;
 use crate::lexer::Lexer;
 use crate::raw_expr::{RawExpr, Statement};
+use crate::scope::Scope;
 use crate::user_function::UserFunction;
 
 use std::collections::HashMap;
@@ -117,18 +118,28 @@ impl Calculator {
             }
 
             Statement::Assign(name, expr) => {
-                let expr = expr.resolve(&self.vars, &self.funcs, Depth::new())?;
+                let expr = expr.resolve(&Scope::globals(&self.vars), &self.funcs, Depth::new())?;
 
-                let ans = expr.eval(&self.vars, &self.funcs, &mut self.cache, Depth::new())?;
+                let ans = expr.eval(
+                    &Scope::globals(&self.vars),
+                    &self.funcs,
+                    &mut self.cache,
+                    Depth::new(),
+                )?;
                 self.set_variable(&name, ans);
 
                 ans
             }
 
             Statement::Eval(expr) => {
-                let expr = expr.resolve(&self.vars, &self.funcs, Depth::new())?;
+                let expr = expr.resolve(&Scope::globals(&self.vars), &self.funcs, Depth::new())?;
 
-                expr.eval(&self.vars, &self.funcs, &mut self.cache, Depth::new())?
+                expr.eval(
+                    &Scope::globals(&self.vars),
+                    &self.funcs,
+                    &mut self.cache,
+                    Depth::new(),
+                )?
             }
         };
 

@@ -4,20 +4,18 @@ use crate::{
     function::Function,
     operator::Operator,
     raw_expr::{RawExpr, RawExprKind},
+    scope::Scope,
     user_function::UserFunction,
 };
-use std::{borrow::Borrow, collections::HashMap, hash::Hash};
+use std::collections::HashMap;
 
 impl RawExpr {
-    pub fn resolve<K>(
+    pub fn resolve(
         self,
-        vars: &HashMap<K, f64>,
+        scope: &Scope,
         funcs: &HashMap<String, UserFunction>,
         depth: Depth,
-    ) -> Result<Expr, ResolverError>
-    where
-        K: Borrow<str> + Hash + Eq,
-    {
+    ) -> Result<Expr, ResolverError> {
         // carried onto the resolved node so eval errors can point at source too
         let span = self.span;
 
@@ -33,8 +31,8 @@ impl RawExpr {
         let kind = match self.kind {
             RawExprKind::Number(n) => ExprKind::Number(n),
             RawExprKind::Binary { op, lhs, rhs } => {
-                let lhs = lhs.resolve(vars, funcs, depth)?;
-                let rhs = rhs.resolve(vars, funcs, depth)?;
+                let lhs = lhs.resolve(scope, funcs, depth)?;
+                let rhs = rhs.resolve(scope, funcs, depth)?;
 
                 ExprKind::Binary {
                     op,
@@ -43,7 +41,7 @@ impl RawExpr {
                 }
             }
             RawExprKind::Unary { op, expr } => {
-                let expr = expr.resolve(vars, funcs, depth)?;
+                let expr = expr.resolve(scope, funcs, depth)?;
 
                 ExprKind::Unary {
                     op,
@@ -51,7 +49,7 @@ impl RawExpr {
                 }
             }
             RawExprKind::Postfix { op, expr } => {
-                let expr = expr.resolve(vars, funcs, depth)?;
+                let expr = expr.resolve(scope, funcs, depth)?;
 
                 ExprKind::Postfix {
                     op,
@@ -59,14 +57,14 @@ impl RawExpr {
                 }
             }
             RawExprKind::Apply { name, mut args } => {
-                if let Some(var) = vars.get(&name).cloned() {
+                if let Some(var) = scope.get(&name) {
                     if args.len() != 1 {
                         let kind = ResolverErrorKind::InvalidMultiplication { target: name, args };
                         return Err(ResolverError::new(kind, Some(span)));
                     }
 
                     let arg = args.pop().unwrap();
-                    let rhs = arg.resolve(vars, funcs, depth)?;
+                    let rhs = arg.resolve(scope, funcs, depth)?;
 
                     let lhs = Expr::new(ExprKind::Number(var), span);
 
@@ -88,7 +86,7 @@ impl RawExpr {
 
                     let resolved_args = args
                         .into_iter()
-                        .map(|raw_expr| raw_expr.resolve(vars, funcs, depth))
+                        .map(|raw_expr| raw_expr.resolve(scope, funcs, depth))
                         .collect::<Result<Vec<Expr>, _>>()?;
 
                     ExprKind::UserCall {
@@ -98,7 +96,7 @@ impl RawExpr {
                 } else if let Some(func) = Function::from(&name) {
                     let resolved_args = args
                         .into_iter()
-                        .map(|raw_expr| raw_expr.resolve(vars, funcs, depth))
+                        .map(|raw_expr| raw_expr.resolve(scope, funcs, depth))
                         .collect::<Result<Vec<_>, _>>()?;
 
                     ExprKind::Call {
@@ -116,9 +114,9 @@ impl RawExpr {
                 then,
                 else_,
             } => {
-                let condition = condition.resolve(vars, funcs, depth)?;
-                let then = then.resolve(vars, funcs, depth)?;
-                let else_ = else_.resolve(vars, funcs, depth)?;
+                let condition = condition.resolve(scope, funcs, depth)?;
+                let then = then.resolve(scope, funcs, depth)?;
+                let else_ = else_.resolve(scope, funcs, depth)?;
 
                 ExprKind::If {
                     condition: Box::new(condition),
@@ -127,7 +125,7 @@ impl RawExpr {
                 }
             }
             RawExprKind::Identifier(ident) => {
-                if let Some(var) = vars.get(&ident).cloned() {
+                if let Some(var) = scope.get(&ident) {
                     ExprKind::Number(var)
                 } else {
                     let kind = if ident == "ans" {
@@ -143,7 +141,7 @@ impl RawExpr {
                 func,
                 args: args
                     .into_iter()
-                    .map(|raw_expr| raw_expr.resolve(vars, funcs, depth))
+                    .map(|raw_expr| raw_expr.resolve(scope, funcs, depth))
                     .collect::<Result<Vec<Expr>, _>>()?,
             },
 
@@ -165,7 +163,7 @@ impl RawExpr {
                     name,
                     args: args
                         .into_iter()
-                        .map(|raw_expr| raw_expr.resolve(vars, funcs, depth))
+                        .map(|raw_expr| raw_expr.resolve(scope, funcs, depth))
                         .collect::<Result<Vec<Expr>, _>>()?,
                 }
             }

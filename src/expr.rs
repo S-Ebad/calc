@@ -1,10 +1,11 @@
-use std::{borrow::Borrow, collections::HashMap, fmt};
+use std::{collections::HashMap, fmt};
 
 use crate::{
     calc::CacheKey,
     errors::{EvalError, EvalErrorKind, Span},
     function::Function,
     operator::Operator,
+    scope::Scope,
     user_function::UserFunction,
 };
 
@@ -149,16 +150,13 @@ impl std::ops::Deref for Expr {
 }
 
 impl Expr {
-    pub fn eval<K>(
+    pub fn eval(
         self,
-        vars: &HashMap<K, f64>,
+        scope: &Scope,
         funcs: &HashMap<String, UserFunction>,
         cache: &mut HashMap<CacheKey, f64>,
         depth: Depth,
-    ) -> Result<f64, EvalError>
-    where
-        K: Borrow<str>,
-    {
+    ) -> Result<f64, EvalError> {
         // operator.rs and function.rs have no spans to offer; this is the layer
         // that knows where the expression came from, so it attaches them
         let span = self.span;
@@ -177,20 +175,20 @@ impl Expr {
         match self.kind {
             ExprKind::Number(num) => Ok(num),
             ExprKind::Binary { op, lhs, rhs } => {
-                let lhs = lhs.eval(vars, funcs, cache, depth)?;
-                let rhs = rhs.eval(vars, funcs, cache, depth)?;
+                let lhs = lhs.eval(scope, funcs, cache, depth)?;
+                let rhs = rhs.eval(scope, funcs, cache, depth)?;
 
                 op.perform_op(lhs, Some(rhs)).map_err(at_span)
             }
 
             ExprKind::Unary { op, expr } | ExprKind::Postfix { op, expr } => op
-                .perform_op(expr.eval(vars, funcs, cache, depth)?, None)
+                .perform_op(expr.eval(scope, funcs, cache, depth)?, None)
                 .map_err(at_span),
 
             ExprKind::Call { func, args } => {
                 let args = args
                     .into_iter()
-                    .map(|expr| expr.eval(vars, funcs, cache, depth))
+                    .map(|expr| expr.eval(scope, funcs, cache, depth))
                     .collect::<Result<Vec<f64>, _>>()?;
 
                 func.call(&args).map_err(at_span)
@@ -201,10 +199,10 @@ impl Expr {
                 then,
                 else_,
             } => {
-                if condit.eval(vars, funcs, cache, depth)? != 0.0 {
-                    then.eval(vars, funcs, cache, depth)
+                if condit.eval(scope, funcs, cache, depth)? != 0.0 {
+                    then.eval(scope, funcs, cache, depth)
                 } else {
-                    else_.eval(vars, funcs, cache, depth)
+                    else_.eval(scope, funcs, cache, depth)
                 }
             }
 
@@ -219,7 +217,7 @@ impl Expr {
 
                 let eval_args = args
                     .into_iter()
-                    .map(|x| x.eval(vars, funcs, cache, depth))
+                    .map(|x| x.eval(scope, funcs, cache, depth))
                     .collect::<Result<Vec<f64>, _>>()?;
 
                 let key = (name, to_bits(&eval_args));
@@ -229,28 +227,26 @@ impl Expr {
                     return Ok(*num);
                 }
 
-                let mut scope = func_params
-                    .iter()
-                    .zip(eval_args)
-                    .map(|(k, v)| (k.as_str(), v))
-                    .collect::<HashMap<&str, f64>>();
-
-                for (key, val) in vars.iter() {
-                    scope.entry(key.borrow()).or_insert(*val);
-                }
+                // linked to the caller rather than copied out of it, so a
+                // call costs nothing proportional to how much is in scope
+                let frame = Scope::frame(func_params, &eval_args, scope);
 
                 // under dynamic scoping the body can only be resolved once the
                 // arguments are known, so resolution is an eval-time step here.
                 // either step can fail inside the body, so both record the call
                 let new_body = func_body
-                    .resolve(&scope, funcs, depth)
+                    .resolve(&frame, funcs, depth)
                     .map_err(|err| EvalError::from(err).push_frame(&key.0, func_src, span))?;
 
                 let result = new_body
-                    .eval(&scope, funcs, cache, depth.call())
+                    .eval(&frame, funcs, cache, depth.call())
                     .map_err(|err| err.push_frame(&key.0, func_src, span))?;
 
-                cache.insert(key, result);
+                // the key is the name and the arguments, so a result that also
+                // depended on a caller's binding cannot be stored against it
+                if !frame.escaped() {
+                    cache.insert(key, result);
+                }
 
                 Ok(result)
             }
