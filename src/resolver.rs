@@ -168,6 +168,15 @@ impl RawExpr {
                 }
             }
 
+            RawExprKind::Param { slot, name } => {
+                let Some(arg) = scope.param(slot) else {
+                    let kind = ResolverErrorKind::UnboundParameter(name);
+                    return Err(ResolverError::new(kind, Some(span)));
+                };
+
+                ExprKind::Number(arg)
+            }
+
             RawExprKind::Constant(constant) => ExprKind::Number(constant.value()),
         };
 

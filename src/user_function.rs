@@ -19,7 +19,7 @@ impl UserFunction {
     pub fn new(
         name: String,
         params: Vec<RawExpr>,
-        body: Box<RawExpr>,
+        mut body: Box<RawExpr>,
         src: String,
     ) -> Result<Self, ParseError> {
         let params = params
@@ -38,6 +38,8 @@ impl UserFunction {
                 }
             })
             .collect::<Result<Vec<String>, _>>()?;
+
+        bind_params(&mut body, &params);
 
         Ok(Self {
             name,
@@ -81,5 +83,51 @@ impl UserFunction {
 impl fmt::Display for UserFunction {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.name)
+    }
+}
+
+/// Rewrite references to the function's own parameters into slot lookups.
+///
+/// Which parameter a name refers to is fixed the moment the function is
+/// written, so the search can happen once here instead of on every call. Only
+/// the function's own parameters are bound: anything else stays a name,
+/// because dynamic scoping decides what it means at the point of the call.
+fn bind_params(expr: &mut RawExpr, params: &[String]) {
+    match &mut expr.kind {
+        RawExprKind::Identifier(name) => {
+            if let Some(slot) = params.iter().position(|param| param == name) {
+                let name = std::rc::Rc::from(name.as_str());
+                expr.kind = RawExprKind::Param { slot, name };
+            }
+        }
+
+        RawExprKind::Binary { lhs, rhs, .. } => {
+            bind_params(lhs, params);
+            bind_params(rhs, params);
+        }
+
+        RawExprKind::Unary { expr, .. } | RawExprKind::Postfix { expr, .. } => {
+            bind_params(expr, params)
+        }
+
+        RawExprKind::If {
+            condition,
+            then,
+            else_,
+        } => {
+            bind_params(condition, params);
+            bind_params(then, params);
+            bind_params(else_, params);
+        }
+
+        RawExprKind::Apply { args, .. }
+        | RawExprKind::Call { args, .. }
+        | RawExprKind::UserCall { args, .. } => {
+            for arg in args {
+                bind_params(arg, params);
+            }
+        }
+
+        RawExprKind::Number(_) | RawExprKind::Constant(_) | RawExprKind::Param { .. } => (),
     }
 }

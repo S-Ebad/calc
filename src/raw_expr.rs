@@ -9,13 +9,21 @@ use crate::{
     write_args,
 };
 
-use std::{collections::HashMap, fmt};
+use std::{collections::HashMap, fmt, rc::Rc};
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum RawExprKind {
     Number(f64),
     Constant(Constant),
     Identifier(String),
+
+    /// a reference to the enclosing function's own parameter, bound to a slot
+    /// at definition time. the name is kept only so diagnostics can quote it,
+    /// shared rather than owned because a body is cloned on every call
+    Param {
+        slot: usize,
+        name: Rc<str>,
+    },
 
     Binary {
         op: Operator,
@@ -645,6 +653,7 @@ impl fmt::Display for RawExprKind {
         match self {
             Self::Number(n) => write!(f, "{}", n),
             Self::Identifier(ident) => write!(f, "{}", ident),
+            Self::Param { name, .. } => write!(f, "{}", name),
             Self::Binary { op, lhs, rhs } => {
                 let (my_left, my_right) = op.bp();
 

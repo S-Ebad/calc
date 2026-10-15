@@ -298,6 +298,7 @@ pub enum ResolverErrorKind {
     UnknownIdentifier(String),
     UndefinedAns, // when 'ans' is used as the first expression (no previous answer)
     ExpressionTooDeep,
+    UnboundParameter(std::rc::Rc<str>),
     ArityMismatch {
         name: String,
         expected: usize,
@@ -327,6 +328,9 @@ impl ResolverErrorKind {
             ResolverErrorKind::UnknownIdentifier(name) => format!("unknown identifier '{}'", name),
             ResolverErrorKind::UndefinedAns => "ans not yet defined".to_string(),
             ResolverErrorKind::ExpressionTooDeep => "expression is nested too deeply".to_string(),
+            ResolverErrorKind::UnboundParameter(name) => {
+                format!("parameter '{}' is not bound here", name)
+            }
         }
     }
 }
