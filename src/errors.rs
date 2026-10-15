@@ -36,6 +36,10 @@ impl Diagnostic for CalcError {
     fn prefix(&self) -> &'static str {
         self.inner().prefix()
     }
+
+    fn frames(&self) -> &[CallFrame] {
+        self.inner().frames()
+    }
 }
 
 impl From<LexerError> for CalcError {
@@ -81,6 +85,37 @@ impl Span {
     }
 }
 
+trait Diagnostic {
+    fn span(&self) -> &Option<Span>;
+    fn message(&self) -> String;
+    fn note(&self) -> &Option<String> {
+        &None
+    }
+    fn prefix(&self) -> &'static str {
+        "Error"
+    }
+
+    /// Calls the error was raised underneath, innermost first. Only evaluation
+    /// can cross into another source, so every other stage reports none.
+    fn frames(&self) -> &[CallFrame] {
+        &[]
+    }
+}
+
+/// One user-function call on the way to an error.
+///
+/// `call_span` indexes the *caller's* source, while `src` is the callee's own
+/// definition line. Chaining those is what lets a diagnostic walk from the
+/// line that was typed down into the body that actually failed: the outermost
+/// call is rendered against the input, and each one after it against the
+/// previous frame's `src`.
+#[derive(Debug)]
+pub struct CallFrame {
+    name: String,
+    src: String,
+    call_span: Span,
+}
+
 #[derive(Debug)]
 pub enum LexerErrorKind {
     InvalidToken(char),
@@ -93,17 +128,6 @@ impl LexerErrorKind {
             LexerErrorKind::InvalidToken(c) => format!("invalid token {}", c),
             LexerErrorKind::InvalidNumber(num) => format!("invalid number: '{}'", num),
         }
-    }
-}
-
-trait Diagnostic {
-    fn span(&self) -> &Option<Span>;
-    fn message(&self) -> String;
-    fn note(&self) -> &Option<String> {
-        &None
-    }
-    fn prefix(&self) -> &'static str {
-        "Error"
     }
 }
 
@@ -468,6 +492,12 @@ pub struct EvalError {
     kind: EvalErrorKind,
     span: Option<Span>,
     note: Option<String>,
+
+    // boxed, and absent until a call boundary is crossed: EvalError rides a
+    // recursive eval stack, so the no-frames case must stay cheap (see 04911b4).
+    // a bare Vec would be correct but 16 bytes wider on every eval frame
+    #[allow(clippy::box_collection)]
+    frames: Option<Box<Vec<CallFrame>>>,
 }
 
 impl EvalError {
@@ -476,6 +506,7 @@ impl EvalError {
             kind,
             span,
             note: None,
+            frames: None,
         }
     }
 
@@ -484,11 +515,30 @@ impl EvalError {
             kind,
             span,
             note: Some(note),
+            frames: None,
         }
     }
 
     pub fn kind(&self) -> &EvalErrorKind {
         &self.kind
+    }
+
+    /// Record that this error happened underneath a call to `name`.
+    ///
+    /// `self.span` keeps pointing into the body that actually failed; the frame
+    /// supplies the text that span belongs to, plus where the call was written
+    /// in the caller. Every boundary on the way out pushes one, which is what
+    /// builds the call stack.
+    pub fn push_frame(mut self, name: &str, src: &str, call_span: Span) -> Self {
+        self.frames
+            .get_or_insert_with(Default::default)
+            .push(CallFrame {
+                name: name.to_owned(),
+                src: src.to_owned(),
+                call_span,
+            });
+
+        self
     }
 }
 
@@ -512,6 +562,10 @@ impl Diagnostic for EvalError {
             _ => "Eval Error",
         }
     }
+
+    fn frames(&self) -> &[CallFrame] {
+        self.frames.as_deref().map(Vec::as_slice).unwrap_or(&[])
+    }
 }
 
 impl From<ResolverError> for EvalError {
@@ -522,28 +576,32 @@ impl From<ResolverError> for EvalError {
             kind: EvalErrorKind::Resolution(Box::new(kind)),
             span,
             note,
+            frames: None,
         }
     }
 }
 
-#[allow(private_bounds)]
-pub fn render_error(src: &str, err: impl Diagnostic) -> String {
-    let prefix = err.prefix();
-    let message = err.message();
-    let note = err.note().as_deref();
+// a deep recursion failure can stack ~100 frames; show the ends and count the
+// rest rather than flooding the terminal
+const MAX_SHOWN_FRAMES: usize = 8;
+const HEAD_FRAMES: usize = 3;
+const TAIL_FRAMES: usize = 3;
 
-    // a span is only meaningful against the source it was taken from; refuse to
-    // slice with one that doesn't fit rather than panicking on a bad index
-    let fits = |span: &Span| {
-        span.start <= span.end
-            && span.end <= src.len()
-            && src.is_char_boundary(span.start)
-            && src.is_char_boundary(span.end)
-    };
+/// Underline `span` within its line of `src`, labelled with `label`.
+///
+/// A span is only meaningful against the source it was taken from, so one that
+/// doesn't fit is dropped rather than used to slice (and panic).
+fn underline(src: &str, span: Option<Span>, label: &str) -> Option<String> {
+    let span = span?;
 
-    let Some(span) = err.span().filter(fits) else {
-        return format!("{prefix}: {message}");
-    };
+    let fits = span.start <= span.end
+        && span.end <= src.len()
+        && src.is_char_boundary(span.start)
+        && src.is_char_boundary(span.end);
+
+    if !fits {
+        return None;
+    }
 
     let line_start = src[..span.start].rfind('\n').map(|i| i + 1).unwrap_or(0);
     let line_end = src[span.end..]
@@ -561,7 +619,60 @@ pub fn render_error(src: &str, err: impl Diagnostic) -> String {
     let indent = " ".repeat(col_start);
     let carets = "^".repeat((col_end - col_start).max(1));
 
-    let note_str = note.map(|n| format!(" {n}")).unwrap_or_default();
+    let label = if label.is_empty() {
+        String::new()
+    } else {
+        format!(" {label}")
+    };
 
-    format!("{prefix}: {message}\n {line}\n {indent}{carets}{note_str}")
+    Some(format!(" {line}\n {indent}{carets}{label}"))
+}
+
+#[allow(private_bounds)]
+pub fn render_error(src: &str, err: impl Diagnostic) -> String {
+    let prefix = err.prefix();
+    let message = err.message();
+    let note = err.note().as_deref();
+    let frames = err.frames();
+
+    // Each call is written in its caller's source: the outermost against the
+    // input that was typed, every one after it against the previous callee's
+    // definition. Frames arrive innermost-first, so walk them in reverse.
+    let mut caller = src;
+    let mut blocks: Vec<String> = Vec::new();
+
+    for frame in frames.iter().rev() {
+        let label = format!("in the body of '{}'", frame.name);
+
+        blocks.extend(underline(caller, Some(frame.call_span), &label));
+        caller = &frame.src;
+    }
+
+    // the failure itself, in whichever source the innermost frame left us in.
+    // with frames above it the carets need to say what they are marking; on
+    // their own the header has already said it, so only a note adds anything
+    let label = match (blocks.is_empty(), note) {
+        (true, Some(note)) => note.to_string(),
+        (true, None) => String::new(),
+        (false, Some(note)) => format!("{message} ({note})"),
+        (false, None) => message.clone(),
+    };
+
+    blocks.extend(underline(caller, *err.span(), &label));
+
+    if blocks.len() > MAX_SHOWN_FRAMES {
+        let hidden = blocks.len() - HEAD_FRAMES - TAIL_FRAMES;
+
+        let tail = blocks.split_off(blocks.len() - TAIL_FRAMES);
+        blocks.truncate(HEAD_FRAMES);
+
+        blocks.push(format!(" ... {hidden} more call(s) ..."));
+        blocks.extend(tail);
+    }
+
+    if blocks.is_empty() {
+        return format!("{prefix}: {message}");
+    }
+
+    format!("{prefix}: {message}\n{}", blocks.join("\n"))
 }

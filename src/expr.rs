@@ -157,6 +157,9 @@ impl Expr {
                 let func = funcs.get(&name).unwrap();
                 let func_params = func.params();
 
+                // borrowed, not cloned: only the error path needs the source
+                let func_src = func.src();
+
                 let func_body = func.body().clone();
 
                 let eval_args = args
@@ -182,9 +185,15 @@ impl Expr {
                 }
 
                 // under dynamic scoping the body can only be resolved once the
-                // arguments are known, so resolution is an eval-time step here
-                let new_body = func_body.resolve(&scope, funcs)?;
-                let result = new_body.eval(&scope, funcs, cache, depth + 1)?;
+                // arguments are known, so resolution is an eval-time step here.
+                // either step can fail inside the body, so both record the call
+                let new_body = func_body
+                    .resolve(&scope, funcs)
+                    .map_err(|err| EvalError::from(err).push_frame(&key.0, func_src, span))?;
+
+                let result = new_body
+                    .eval(&scope, funcs, cache, depth + 1)
+                    .map_err(|err| err.push_frame(&key.0, func_src, span))?;
 
                 cache.insert(key, result);
 

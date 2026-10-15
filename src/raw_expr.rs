@@ -556,7 +556,7 @@ impl RawExpr {
         Ok(())
     }
 
-    pub fn classify(self) -> Result<Statement, ParseError> {
+    pub fn classify(self, src: &str) -> Result<Statement, ParseError> {
         match self {
             RawExpr {
                 kind:
@@ -574,7 +574,7 @@ impl RawExpr {
                         unreachable!()
                     };
 
-                    let function = UserFunction::new(name, args, rhs)?;
+                    let function = UserFunction::new(name, args, rhs, src.to_owned())?;
 
                     Ok(Statement::FuncDef(function))
                 }

@@ -106,7 +106,7 @@ impl Calculator {
         let expr = RawExpr::parse(lexer, &self.funcs)?;
         expr.check_errors()?;
 
-        let stmt = expr.classify()?;
+        let stmt = expr.classify(buf)?;
 
         let ans = match stmt {
             Statement::FuncDef(user_function) => {
