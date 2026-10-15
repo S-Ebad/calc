@@ -40,6 +40,10 @@ impl<'a> Scope<'a> {
         self.args.get(slot).copied()
     }
 
+    pub fn has_param(&self, name: &str) -> bool {
+        self.params.iter().any(|param| param == name)
+    }
+
     pub fn get(&self, name: &str) -> Option<f64> {
         if let Some(slot) = self.params.iter().position(|param| param == name) {
             return Some(self.args[slot]);

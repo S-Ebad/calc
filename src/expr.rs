@@ -230,16 +230,34 @@ impl Expr {
                 // the body's own parameters over the same globals
                 let frame = scope.frame(func_params, &eval_args);
 
+                // a name the callee could not find may be one of ours. that it
+                // is out of reach is the deliberate rule rather than an
+                // oversight, so the diagnostic should say which it is. every
+                // boundary checks its own, so a name bound further up is still
+                // recognised on the way out
+                let explain = |err: EvalError| match err.unresolved_name() {
+                    Some(unresolved) if scope.has_param(unresolved) => {
+                        let note = format!(
+                            "'{}' is a parameter of a calling function; pass it as an argument",
+                            unresolved
+                        );
+
+                        err.or_note(note)
+                    }
+
+                    _ => err,
+                };
+
                 // under dynamic scoping the body can only be resolved once the
                 // arguments are known, so resolution is an eval-time step here.
                 // either step can fail inside the body, so both record the call
-                let new_body = func_body
-                    .resolve(&frame, funcs, depth)
-                    .map_err(|err| EvalError::from(err).push_frame(&key.0, func_src, span))?;
+                let new_body = func_body.resolve(&frame, funcs, depth).map_err(|err| {
+                    explain(EvalError::from(err)).push_frame(&key.0, func_src, span)
+                })?;
 
                 let result = new_body
                     .eval(&frame, funcs, cache, depth.call())
-                    .map_err(|err| err.push_frame(&key.0, func_src, span))?;
+                    .map_err(|err| explain(err).push_frame(&key.0, func_src, span))?;
 
                 cache.insert(key, result);
 

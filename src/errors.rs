@@ -539,6 +539,24 @@ impl EvalError {
     /// supplies the text that span belongs to, plus where the call was written
     /// in the caller. Every boundary on the way out pushes one, which is what
     /// builds the call stack.
+    /// The name a failed identifier lookup was after, if that is what this is.
+    pub fn unresolved_name(&self) -> Option<&str> {
+        let EvalErrorKind::Resolution(kind) = &self.kind else {
+            return None;
+        };
+
+        match kind.as_ref() {
+            ResolverErrorKind::UnknownIdentifier(name) => Some(name),
+            _ => None,
+        }
+    }
+
+    /// Add a note, leaving any the error already carries in place.
+    pub fn or_note(mut self, note: String) -> Self {
+        self.note.get_or_insert(note);
+        self
+    }
+
     pub fn push_frame(mut self, name: &str, src: &str, call_span: Span) -> Self {
         self.frames
             .get_or_insert_with(Default::default)
