@@ -186,6 +186,12 @@ fn nud(
 
     let depth = depth.descend();
 
+    // unary plus is a no-op: it builds nothing, so a run of them collapses
+    // here rather than costing a frame and a descent each
+    while matches!(lexer.peek(), Some(TokenKind::Operator(Operator::Add))) {
+        lexer.next();
+    }
+
     let expr = match lexer.next_token() {
         Some(Token {
             kind: TokenKind::Number(num),
@@ -276,20 +282,15 @@ fn nud(
         }
 
         Some(Token {
-            kind: TokenKind::Operator(op @ (Operator::Sub | Operator::Add)),
+            kind: TokenKind::Operator(Operator::Sub),
             span,
         }) => {
-            let unary = if op == Operator::Sub {
-                Operator::Neg
-            } else {
-                return nud(lexer, funcs, depth);
-            };
-
-            // for chained unary (i.e --x)
+            // negation does build a node, so a chain of them (i.e --x) is
+            // real depth and stays bounded by the budget
             let expr = nud(lexer, funcs, depth)?;
 
             let raw_expr_kind = RawExprKind::Unary {
-                op: unary,
+                op: Operator::Neg,
                 expr: Box::new(expr),
             };
 
