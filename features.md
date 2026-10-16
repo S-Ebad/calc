@@ -169,24 +169,22 @@ Functions use dynamic scoping, globals are resolved at call time, not definition
 = 3628800
 ```
 
-## Parameter Shadowing Restriction
-Function parameters cannot share names with existing user-defined functions. This is because the parser eagerly identifies known function names when building the AST, so passing a function name as a parameter causes a parse error.
-```
-> f(x) = 2x
-
-> g(f) = 2f
-Parse Error: 'f' is a function, not a value
-```
-This restriction does not apply to variables, a variable name can be reused as a parameter without issue.
-
+## Parameter Shadowing
+Inside a function's body, a parameter shadows anything of the same name: a variable, a user-defined function, or a built-in. The name refers to the value passed in, wherever it appears in the body.
 ```
 > f(x) = 2x
 
 > x = 10
 
+> g(f) = f - 2*3
+
+> g(x)
+= 4
+
 > f(x)
 = 20
 ```
+Outside the body nothing changes, so `f` is still the function. Constants (`pi`, `e`, ...) can't be used as parameters.
 
 ## UFCS (Uniform Function Call Syntax)
 Any value can call a function as if it were a method, with the value passed as the first argument: `value.f(rest, of, args)` is equivalent to `f(value, rest, of, args)`.

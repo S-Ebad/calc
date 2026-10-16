@@ -110,6 +110,47 @@ impl Lexer {
     pub fn end_pos(&self) -> usize {
         self.src_len
     }
+
+    /// The parameter names, if the line is a definition: `name(a, b, ...) = ...`
+    ///
+    /// The body comes after the parameters it is read in terms of, so the
+    /// parser has to know them before it gets there. Whether a name is a call
+    /// or a value decides the shape of the tree (`f - 2` against `f(-2)`), and
+    /// that cannot be repaired once the body has been built the wrong way.
+    ///
+    /// Anything other than plain names between the parentheses is not a
+    /// definition this can vouch for, and is left to parse as it otherwise
+    /// would, errors included.
+    pub(crate) fn definition_params(&self) -> Option<Vec<String>> {
+        // stored back to front, so popping is cheap
+        let mut tokens = self.tokens.iter().rev().map(|token| &token.kind);
+
+        let Some(TokenKind::Identifier(_)) = tokens.next() else {
+            return None;
+        };
+
+        let Some(TokenKind::LParen) = tokens.next() else {
+            return None;
+        };
+
+        let mut params = Vec::new();
+
+        loop {
+            match tokens.next()? {
+                TokenKind::Identifier(name) => params.push(name.clone()),
+                TokenKind::RParen if params.is_empty() => break, // f() = ...
+                _ => return None,
+            }
+
+            match tokens.next()? {
+                TokenKind::Comma => continue,
+                TokenKind::RParen => break,
+                _ => return None,
+            }
+        }
+
+        matches!(tokens.next(), Some(TokenKind::Operator(Operator::Equal))).then_some(params)
+    }
 }
 
 impl Iterator for Lexer {

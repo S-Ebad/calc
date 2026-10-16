@@ -108,11 +108,11 @@ fn invalid_redefinition() {
     calc.solve("f(x) = 2x").unwrap();
     assert!(calc.solve("f = 10").is_err());
 
-    //weird quirk, u can't use defined functions as parameters
+    // a defined function's name can still be a parameter, and shadows it in
+    // the body (see tests/scoping.rs)
     calc.solve("g(x) = 2x").unwrap();
-    //this is because parameters & arguments are parsed the same way. So when it sees "g" it
-    //thinks It's a function & tries to parse it.
-    assert!(calc.solve("h(g) = 2g").is_err());
+    calc.solve("h(g) = 2g").unwrap();
+    assert_eq!(calc.solve("h(3)").unwrap().unwrap(), 6.0);
 
     // this is fine with variables though
     calc.solve("x = 10").unwrap();

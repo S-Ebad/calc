@@ -104,6 +104,50 @@ impl std::ops::Deref for RawExpr {
     }
 }
 
+/// What the parser needs to know about names to tell a call from a value.
+struct ParseCtx<'a> {
+    funcs: &'a HashMap<String, UserFunction>,
+
+    // the parameters of the definition this line is, if it is one. inside the
+    // body they shadow any function of the same name, the same way they shadow
+    // globals when the body runs
+    params: &'a [String],
+}
+
+impl ParseCtx<'_> {
+    fn is_param(&self, name: &str) -> bool {
+        self.params.iter().any(|param| param == name)
+    }
+
+    /// Whether a name is known to be a function here, rather than a value.
+    fn is_func(&self, name: &str) -> bool {
+        !self.is_param(name) && (Function::from(name).is_some() || self.funcs.contains_key(name))
+    }
+
+    /// The node for applying a name to arguments.
+    ///
+    /// A parameter applied to something is a value being multiplied, exactly
+    /// as a variable would be, so it is left for the resolver to read that way.
+    fn call(&self, name: String, args: Vec<RawExpr>) -> RawExprKind {
+        if self.is_param(&name) {
+            return RawExprKind::Apply { name, args };
+        }
+
+        self.global_call(name, args)
+    }
+
+    /// The node for calling a name as it is known outside any definition.
+    fn global_call(&self, name: String, args: Vec<RawExpr>) -> RawExprKind {
+        if let Some(func) = Function::from(&name) {
+            RawExprKind::Call { func, args }
+        } else if self.funcs.contains_key(&name) {
+            RawExprKind::UserCall { name, args }
+        } else {
+            RawExprKind::Apply { name, args }
+        }
+    }
+}
+
 /// Parses a call's argument list, and reports the span it occupies.
 ///
 /// The span reaches the closing parenthesis, so a caller can merge it with the
@@ -112,7 +156,7 @@ impl std::ops::Deref for RawExpr {
 /// argument's span.
 fn consume_args(
     lexer: &mut Lexer,
-    funcs: &HashMap<String, UserFunction>,
+    ctx: &ParseCtx,
     depth: Depth,
 ) -> Result<(Vec<RawExpr>, Span), ParseError> {
     // no parenthesis. i.e: sin10
@@ -127,7 +171,7 @@ fn consume_args(
     };
 
     if !matches!(open.kind, TokenKind::LParen) {
-        let arg = nud(lexer, funcs, depth)?;
+        let arg = nud(lexer, ctx, depth)?;
         let span = *arg.span();
 
         return Ok((vec![arg], span));
@@ -145,7 +189,7 @@ fn consume_args(
     let mut args: Vec<RawExpr> = Vec::new();
 
     loop {
-        args.push(parse_expression(lexer, 0, funcs, depth)?);
+        args.push(parse_expression(lexer, 0, ctx, depth)?);
 
         if lexer.peek() == Some(&TokenKind::Comma) {
             let comma = lexer.next_token();
@@ -177,7 +221,7 @@ fn consume_args(
 
 fn nud(
     lexer: &mut Lexer,
-    funcs: &HashMap<String, UserFunction>,
+    ctx: &ParseCtx,
     depth: Depth,
 ) -> Result<RawExpr, ParseError> {
     // nesting recurses here: a group, an argument list or a unary chain each
@@ -215,9 +259,7 @@ fn nud(
             kind: TokenKind::Identifier(name),
             span,
         }) => {
-            let is_func = Function::from(&name).is_some()
-                || funcs.contains_key(&name)
-                || lexer.peek() == Some(&TokenKind::LParen);
+            let is_func = ctx.is_func(&name) || lexer.peek() == Some(&TokenKind::LParen);
 
             if !is_func {
                 RawExpr::new(RawExprKind::Identifier(name), span)
@@ -229,20 +271,12 @@ fn nud(
                     return Err(ParseError::with_note(kind, Some(span), note));
                 }
 
-                let (args, args_span) = consume_args(lexer, funcs, depth)?;
+                let (args, args_span) = consume_args(lexer, ctx, depth)?;
 
                 // the call runs from the name through the closing parenthesis
                 let call_span = span.merge(args_span);
 
-                let raw_expr = if let Some(func) = Function::from(&name) {
-                    RawExprKind::Call { func, args }
-                } else if funcs.contains_key(&name) {
-                    RawExprKind::UserCall { name, args }
-                } else {
-                    RawExprKind::Apply { name, args }
-                };
-
-                RawExpr::new(raw_expr, call_span)
+                RawExpr::new(ctx.call(name, args), call_span)
             }
         }
 
@@ -250,7 +284,7 @@ fn nud(
             kind: TokenKind::LParen,
             span,
         }) => {
-            let lhs: RawExpr = parse_expression(lexer, 0, funcs, depth)?;
+            let lhs: RawExpr = parse_expression(lexer, 0, ctx, depth)?;
 
             match lexer.next_token() {
                 Some(Token {
@@ -295,7 +329,7 @@ fn nud(
         }) => {
             // negation does build a node, so a chain of them (i.e --x) is
             // real depth and stays bounded by the budget
-            let expr = nud(lexer, funcs, depth)?;
+            let expr = nud(lexer, ctx, depth)?;
 
             let raw_expr_kind = RawExprKind::Unary {
                 op: Operator::Neg,
@@ -330,7 +364,7 @@ fn nud(
 fn led(
     lexer: &mut Lexer,
     lhs: RawExpr,
-    funcs: &HashMap<String, UserFunction>,
+    ctx: &ParseCtx,
     depth: Depth,
 ) -> Result<RawExpr, ParseError> {
     let token = lexer.peek_token();
@@ -371,21 +405,13 @@ fn led(
             // taken before lhs is moved into the argument list
             let lhs_span = *lhs.span();
 
-            let (mut args, args_span) = consume_args(lexer, funcs, depth)?;
+            let (mut args, args_span) = consume_args(lexer, ctx, depth)?;
             args.insert(0, lhs);
 
             // a dot-call spans its receiver too, since that is its first argument
             let call_span = lhs_span.merge(args_span);
 
-            let raw_expr_kind = if let Some(func) = Function::from(&name) {
-                RawExprKind::Call { func, args }
-            } else if funcs.contains_key(&name) {
-                RawExprKind::UserCall { name, args }
-            } else {
-                RawExprKind::Apply { name, args }
-            };
-
-            RawExpr::new(raw_expr_kind, call_span)
+            RawExpr::new(ctx.call(name, args), call_span)
         }
 
         Some(Token {
@@ -404,7 +430,7 @@ fn led(
 
             let op = Operator::ImplicitMul;
             let (_, r_bp) = op.bp();
-            let rhs = parse_expression(lexer, r_bp, funcs, depth)?;
+            let rhs = parse_expression(lexer, r_bp, ctx, depth)?;
 
             let span = Span::merge(*lhs.span(), *rhs.span());
             let raw_expr_kind = RawExprKind::Binary {
@@ -423,7 +449,7 @@ fn led(
             let span = *span;
             lexer.next();
 
-            let then = parse_expression(lexer, 0, funcs, depth)?;
+            let then = parse_expression(lexer, 0, ctx, depth)?;
             if lexer.next() != Some(TokenKind::Colon) {
                 let span = span.merge(*then.span());
 
@@ -434,7 +460,7 @@ fn led(
                 ));
             }
 
-            let else_ = parse_expression(lexer, 0, funcs, depth)?;
+            let else_ = parse_expression(lexer, 0, ctx, depth)?;
 
             // the whole conditional: condition through else branch
             let span = Span::merge(*lhs.span(), *else_.span());
@@ -461,7 +487,7 @@ fn led(
             let raw_expr_span: Span;
             if !op.is_postfix() {
                 let (_, r_bp) = op.bp();
-                let rhs = parse_expression(lexer, r_bp, funcs, depth)?;
+                let rhs = parse_expression(lexer, r_bp, ctx, depth)?;
 
                 raw_expr_span = span.merge(*rhs.span()).merge(*lhs.span());
                 raw_expr_kind = RawExprKind::Binary {
@@ -489,10 +515,22 @@ fn led(
 fn parse_expression(
     lexer: &mut Lexer,
     min_bp: u8,
-    funcs: &HashMap<String, UserFunction>,
+    ctx: &ParseCtx,
     depth: Depth,
 ) -> Result<RawExpr, ParseError> {
-    let mut lhs = nud(lexer, funcs, depth)?;
+    let lhs = nud(lexer, ctx, depth)?;
+
+    parse_infix(lexer, lhs, min_bp, ctx, depth)
+}
+
+/// Continues an expression from an operand that has already been parsed.
+fn parse_infix(
+    lexer: &mut Lexer,
+    mut lhs: RawExpr,
+    min_bp: u8,
+    ctx: &ParseCtx,
+    depth: Depth,
+) -> Result<RawExpr, ParseError> {
     let mut depth = depth;
 
     while let Some(token) = lexer.peek() {
@@ -514,10 +552,29 @@ fn parse_expression(
             ));
         }
 
-        lhs = led(lexer, lhs, funcs, depth)?;
+        lhs = led(lexer, lhs, ctx, depth)?;
     }
 
     Ok(lhs)
+}
+
+/// Parses the `name(a, b, ...)` a definition starts with.
+///
+/// The name is the one thing on the line the parameters do not shadow: in
+/// `f(f) = f + 1` the first 'f' is what is being defined. So it is taken here,
+/// as it would be outside any definition, rather than by nud.
+fn parse_head(lexer: &mut Lexer, ctx: &ParseCtx) -> Result<RawExpr, ParseError> {
+    let Some(Token {
+        kind: TokenKind::Identifier(name),
+        span,
+    }) = lexer.next_token()
+    else {
+        unreachable!("a definition starts with its name")
+    };
+
+    let (args, args_span) = consume_args(lexer, ctx, Depth::new())?;
+
+    Ok(RawExpr::new(ctx.global_call(name, args), span.merge(args_span)))
 }
 
 impl RawExpr {
@@ -529,7 +586,22 @@ impl RawExpr {
             return Err(ParseError::new(ParseErrorKind::EmptyExpression, None));
         }
 
-        let expr = parse_expression(&mut lexer, 0, funcs, Depth::new())?;
+        let params = lexer.definition_params();
+
+        let expr = match &params {
+            Some(params) => {
+                let ctx = ParseCtx { funcs, params };
+                let head = parse_head(&mut lexer, &ctx)?;
+
+                parse_infix(&mut lexer, head, 0, &ctx, Depth::new())?
+            }
+
+            None => {
+                let ctx = ParseCtx { funcs, params: &[] };
+
+                parse_expression(&mut lexer, 0, &ctx, Depth::new())?
+            }
+        };
 
         if let Some(token) = lexer.next_token() {
             let span;
