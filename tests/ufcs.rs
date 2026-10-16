@@ -140,3 +140,54 @@ fn user_fn_chained() {
     assert_eq!(calc.solve("0.f().g()").unwrap(), Some(1.0));
     assert_eq!(calc.solve("3.g().f()").unwrap(), Some(8.0));
 }
+
+/// UFCS only calls functions. Without '.', a variable applied to something is
+/// multiplied, so a dot-call has to be refused rather than read the same way.
+#[test]
+fn a_variable_cannot_be_dot_called() {
+    let mut session = Session::new();
+    session.ok("x = 3");
+
+    assert!(matches!(
+        resolver_kind(&session.err("5.x()")),
+        Some(ResolverErrorKind::NotAFunction(name)) if name == "x"
+    ));
+}
+
+/// A parameter is known to be a value while the body is parsed, so this fails
+/// when the function is defined rather than when it is called.
+#[test]
+fn a_parameter_cannot_be_dot_called() {
+    let mut session = Session::new();
+    session.ok("f(x) = 2x");
+
+    assert!(matches!(
+        parse_kind(&session.err("g(f) = 5.f()")),
+        Some(ParseErrorKind::NotAFunction(name)) if name == "f"
+    ));
+
+    // as the receiver it is an ordinary value
+    session.ok("h(f) = f.sqrt()");
+    assert_eq!(session.value("h(9)"), 3.0);
+}
+
+/// Where a function and a variable share a name, '.' means the function.
+#[test]
+fn a_dot_call_prefers_the_function_over_a_variable() {
+    let mut session = Session::new();
+    session.ok("x = 3").ok("x(y) = y * 100");
+
+    assert_eq!(session.value("5.x()"), 500.0);
+}
+
+/// A body may dot-call a function that is only defined afterwards.
+#[test]
+fn a_dot_call_may_name_a_function_defined_later() {
+    let mut session = Session::new();
+    session.ok("h(y) = y.later()");
+
+    assert!(session.is_err("h(1)"));
+
+    session.ok("later(z) = z + 1");
+    assert_eq!(session.value("h(1)"), 2.0);
+}
