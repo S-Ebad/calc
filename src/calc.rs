@@ -4,7 +4,7 @@ use crate::constant::Constant;
 use crate::errors::{CalcError, ResolverError, ResolverErrorKind, Span};
 use crate::expr::Depth;
 use crate::function::Function;
-use crate::lexer::Lexer;
+use crate::lexer::{self, Lexer};
 use crate::raw_expr::{RawExpr, Statement};
 use crate::scope::Scope;
 use crate::user_function::UserFunction;
@@ -176,34 +176,38 @@ impl Calculator {
     /// defined, and the result is the last statement's. The first error stops
     /// the rest; what ran before it stays done.
     fn solve_on_this_thread(&mut self, buf: &str) -> Result<Option<f64>, CalcError> {
-        let separated = buf.contains(';');
+        // an input with nothing in it at all is still a mistake
+        if buf.trim().is_empty() {
+            return self.solve_statement(buf);
+        }
 
         let mut ans = None;
-        let mut offset = 0;
 
-        for statement in buf.split(';') {
-            // a trailing ';' or a doubled one leaves nothing to solve. an
-            // input that is empty without any separator is still a mistake
-            if !(separated && statement.trim().is_empty()) {
-                // each statement is solved against its own text, so a function
-                // keeps only its own definition rather than the whole input,
-                // and the error is moved back to where it sits in the input
-                ans = self
-                    .solve_statement(statement)
-                    .map_err(|err| err.shifted(offset))?;
+        for piece in lexer::statements(buf) {
+            // a trailing ';', a doubled one, or a statement that is only a
+            // comment leaves nothing to solve
+            if !piece.has_code {
+                continue;
             }
 
-            offset += statement.len() + ';'.len_utf8();
+            // each statement is solved against its own text, so a function
+            // keeps only its own definition rather than the whole input, and
+            // the error is moved back to where it sits in the input
+            ans = self
+                .solve_statement(piece.text)
+                .map_err(|err| err.shifted(piece.offset))?;
         }
 
         Ok(ans)
     }
 
     fn solve_statement(&mut self, buf: &str) -> Result<Option<f64>, CalcError> {
-        // whitespace around a statement is only what separates it from the
-        // one before
+        // whitespace and comments around a statement are only what separates
+        // it from the one before
+        let code = lexer::strip_comments(buf);
+
         if let Some(rest) =
-            Self::help_argument(buf.trim()).filter(|rest| Self::is_valid_help_name(rest))
+            Self::help_argument(code.trim()).filter(|rest| Self::is_valid_help_name(rest))
         {
             self.help(rest);
 

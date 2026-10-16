@@ -98,3 +98,57 @@ fn an_error_inside_a_call_points_into_the_definition() {
 fn help_is_a_statement_like_any_other() {
     assert_eq!(solve("help sin; 2"), 2.0);
 }
+
+#[test]
+fn a_comment_runs_to_the_end_of_its_line() {
+    assert_eq!(solve("1 + 2 # three"), 3.0);
+    assert_eq!(solve("1 + # not this\n 2"), 3.0);
+    assert_eq!(solve("f(x) = x # the input\n * 2; f(3)"), 6.0);
+}
+
+#[test]
+fn a_separator_inside_a_comment_separates_nothing() {
+    assert_eq!(solve("a = 1 # not; a separator\n + 1; a"), 2.0);
+}
+
+#[test]
+fn a_statement_that_is_only_a_comment_is_skipped() {
+    let mut calc = Calculator::new();
+
+    assert_eq!(calc.solve("# nothing to see").unwrap(), None);
+    assert_eq!(calc.solve("1; # the end").unwrap(), Some(1.0));
+}
+
+#[test]
+fn a_file_of_definitions_with_comments() {
+    let src = "\
+# std.math
+sq(x) = x^2;   # square
+cube(x) = x * sq(x);
+
+# hypotenuse; uses sq
+hyp(a, b) = sqrt(sq(a) + sq(b));
+";
+
+    let mut session = Session::new();
+    session.ok(src);
+
+    assert_eq!(session.value("hyp(3, 4)"), 5.0);
+    assert_eq!(session.value("cube(2)"), 8.0);
+}
+
+#[test]
+fn help_can_be_followed_by_a_comment() {
+    let mut calc = Calculator::new();
+
+    assert_eq!(calc.solve("help sin # what is sin").unwrap(), None);
+    assert_eq!(calc.solve("# first a comment\nhelp sin").unwrap(), None);
+}
+
+#[test]
+fn an_error_after_a_comment_points_past_it() {
+    assert_eq!(
+        render("# a comment; with a separator\n1 + zzz"),
+        "Resolver Error: unknown identifier 'zzz'\n 1 + zzz\n     ^^^"
+    );
+}

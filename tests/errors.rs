@@ -44,7 +44,7 @@ fn empty_expr() {
 #[test]
 fn invalid_token() {
     assert!(solve_is_err("1 @ 2"));
-    assert!(solve_is_err("1 # 2"));
+    assert!(solve_is_err("1 ~ 2"));
     assert!(solve_is_err("1 $ 2"));
 }
 

@@ -236,3 +236,12 @@ Resolver Error: unknown identifier 'zzz'
 ```
 
 Each function keeps only its own statement as its definition, so `help` shows just that statement.
+
+## Comments
+`#` starts a comment, which runs to the end of the line. A `;` inside a comment is part of it, and a statement that is only a comment is skipped.
+
+```
+# std.math
+sq(x) = x^2;          # square
+cube(x) = x * sq(x);  # uses sq; defined above
+```

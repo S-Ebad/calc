@@ -1,4 +1,4 @@
-use std::{fmt, ops::Deref};
+use std::{borrow::Cow, fmt, ops::Deref};
 
 use crate::{
     constant::Constant,
@@ -363,6 +363,17 @@ fn tokenize(expr: &str) -> Result<Vec<Token>, LexerError> {
             continue;
         }
 
+        if c == COMMENT {
+            // the rest of the line is the comment
+            for c in iter.by_ref() {
+                if c == '\n' {
+                    break;
+                }
+            }
+
+            continue;
+        }
+
         let start = iter.pos() - 1;
         let token = TokenKind::from(c, start, &mut iter)?;
         let end = iter.pos();
@@ -374,4 +385,86 @@ fn tokenize(expr: &str) -> Result<Vec<Token>, LexerError> {
     }
 
     Ok(tokens)
+}
+
+/// Starts a comment, which runs to the end of its line.
+const COMMENT: char = '#';
+
+/// Separates one statement from the next.
+const SEPARATOR: char = ';';
+
+/// One statement of a longer input.
+pub struct Piece<'a> {
+    /// where the statement starts in the input, in bytes
+    pub offset: usize,
+    pub text: &'a str,
+
+    /// whether anything is left once whitespace and comments are set aside
+    pub has_code: bool,
+}
+
+/// Split an input into its statements.
+///
+/// This runs before anything is lexed, so it has to know where comments are
+/// as well: a separator inside one is part of the comment.
+pub fn statements(src: &str) -> impl Iterator<Item = Piece<'_>> {
+    let mut chars = src.char_indices();
+    let mut start = 0;
+    let mut done = false;
+
+    std::iter::from_fn(move || {
+        if done {
+            return None;
+        }
+
+        let mut has_code = false;
+        let mut in_comment = false;
+
+        for (i, c) in chars.by_ref() {
+            match c {
+                '\n' if in_comment => in_comment = false,
+                _ if in_comment => (),
+
+                COMMENT => in_comment = true,
+
+                SEPARATOR => {
+                    let piece = Piece {
+                        offset: start,
+                        text: &src[start..i],
+                        has_code,
+                    };
+
+                    start = i + SEPARATOR.len_utf8();
+                    return Some(piece);
+                }
+
+                c if c.is_whitespace() => (),
+                _ => has_code = true,
+            }
+        }
+
+        done = true;
+
+        Some(Piece {
+            offset: start,
+            text: &src[start..],
+            has_code,
+        })
+    })
+}
+
+/// The input with its comments taken out, for the few checks that read the
+/// text before it is lexed.
+pub fn strip_comments(src: &str) -> Cow<'_, str> {
+    if !src.contains(COMMENT) {
+        return Cow::Borrowed(src);
+    }
+
+    let code = src
+        .lines()
+        .map(|line| line.split(COMMENT).next().unwrap_or_default())
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    Cow::Owned(code)
 }

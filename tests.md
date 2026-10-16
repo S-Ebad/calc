@@ -67,7 +67,9 @@ Several statements in one input: they run in order and the last one answers,
 definitions carry forward, empty statements are skipped, and the first error
 stops the rest while keeping what ran. Errors are checked to point into the
 whole input, on the right line of a multi-line one, while a frame inside a call
-still points into the definition.
+still points into the definition. Also comments: one runs to the end of its
+line, a separator inside one separates nothing, and a statement that is only a
+comment is skipped.
 
 ### logic
 Equality and comparison, boolean operators with `true`/`false` and numeric
