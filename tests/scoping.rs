@@ -17,6 +17,61 @@ fn a_parameter_shadows_a_global_of_the_same_name() {
     assert_eq!(session.value("x"), 10.0, "the global is untouched");
 }
 
+/// A parameter shadows a function of the same name too. The parser has to know
+/// this while it reads the body, because a call and a value build different
+/// trees: read as the function, this body would be 'f(-2) * 3'.
+#[test]
+fn a_parameter_shadows_a_function_of_the_same_name() {
+    let mut session = Session::new();
+    session.ok("f(x) = x").ok("g(f) = f - 2*3");
+
+    assert_eq!(session.value("g(10)"), 4.0);
+    assert_eq!(session.value("f(10)"), 10.0, "the function is untouched");
+}
+
+#[test]
+fn a_shadowing_parameter_reads_as_a_value_wherever_it_appears() {
+    let mut session = Session::new();
+    session.ok("f(x) = x");
+
+    // at the end of the body, before an argument, and as a factor
+    session.ok("a(f) = 2f").ok("b(f, y) = f y").ok("c(f) = f(2)");
+
+    assert_eq!(session.value("a(5)"), 10.0);
+    assert_eq!(session.value("b(3, 4)"), 12.0);
+    assert_eq!(session.value("c(5)"), 10.0, "applied, it multiplies");
+}
+
+#[test]
+fn a_parameter_shadows_a_built_in() {
+    let mut session = Session::new();
+    session.ok("g(sin) = sin + 1");
+
+    assert_eq!(session.value("g(2)"), 3.0);
+    assert_eq!(session.value("sin(0)"), 0.0, "the built-in is untouched");
+}
+
+/// Shadowing reaches the body only: the name being defined is the one thing on
+/// the line its parameters do not cover.
+#[test]
+fn a_function_may_name_a_parameter_after_itself() {
+    let mut session = Session::new();
+    session.ok("f(x) = x").ok("f(f) = f + 1");
+
+    assert_eq!(session.value("f(2)"), 3.0);
+}
+
+/// Lines that are not definitions parse exactly as before: the function is
+/// still a function.
+#[test]
+fn outside_a_definition_a_function_is_still_called() {
+    let mut session = Session::new();
+    session.ok("f(x) = 2x");
+
+    assert_eq!(session.value("f -2*3"), -12.0, "an implicit call, then the product");
+    assert!(session.is_err("max(1, f)"));
+}
+
 #[test]
 fn a_body_reads_globals() {
     let mut session = Session::new();
