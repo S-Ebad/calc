@@ -374,7 +374,8 @@ fn tokenize(expr: &str) -> Result<Vec<Token>, LexerError> {
             continue;
         }
 
-        let start = iter.pos() - 1;
+        // positions are in bytes, and the char just taken may be several
+        let start = iter.pos() - c.len_utf8();
         let token = TokenKind::from(c, start, &mut iter)?;
         let end = iter.pos();
 

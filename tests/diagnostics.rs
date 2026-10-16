@@ -373,3 +373,19 @@ fn an_ordinary_unknown_name_gets_no_such_note() {
         rendered
     );
 }
+
+/// Positions are counted in bytes, so a token that starts with a multi-byte
+/// character has to start that many bytes back, or its span splits the
+/// character and cannot be shown.
+#[test]
+fn a_token_starting_with_a_multibyte_char_is_underlined() {
+    assert_eq!(
+        render("é + 1"),
+        "Resolver Error: unknown identifier 'é'\n é + 1\n ^"
+    );
+
+    assert_eq!(
+        render("1 + éa"),
+        "Resolver Error: unknown identifier 'éa'\n 1 + éa\n     ^^"
+    );
+}
