@@ -119,3 +119,21 @@ fn invalid_redefinition() {
     calc.solve("f(x) = 10x").unwrap();
     assert_eq!(calc.solve("f(2)").unwrap().unwrap(), 20.0);
 }
+
+/// A name can only stand for one slot, so a repeated parameter would make an
+/// argument unreachable and silently discard it.
+#[test]
+fn a_parameter_name_cannot_repeat() {
+    let mut session = Session::new();
+
+    assert!(matches!(
+        parse_kind(&session.err("f(a, a) = a")),
+        Some(ParseErrorKind::DuplicateParameter(_))
+    ));
+
+    assert!(session.is_err("f(a, b, a) = a"));
+
+    // different names are of course fine
+    session.ok("f(a, b) = a + b");
+    assert_eq!(session.value("f(1, 2)"), 3.0);
+}

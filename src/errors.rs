@@ -195,6 +195,7 @@ pub enum ParseErrorKind {
     UnexpectedToken(Token),
     FunctionUsedAsValue(String),
     NotAFunction(String),
+    DuplicateParameter(String),
     ExpressionTooDeep,
 }
 
@@ -212,6 +213,9 @@ impl ParseErrorKind {
                 format!("'{}' is a function, not a value", name)
             }
             ParseErrorKind::NotAFunction(name) => format!("'{}' is a value, not a function", name),
+            ParseErrorKind::DuplicateParameter(name) => {
+                format!("duplicate parameter '{}'", name)
+            }
 
             ParseErrorKind::MissingClosingParenthesis => "unclosed parenthesis".to_string(),
             ParseErrorKind::UnexpectedEndOfInput => "unexpected end of input".to_string(),

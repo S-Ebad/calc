@@ -27,22 +27,33 @@ impl UserFunction {
         mut body: Box<RawExpr>,
         src: String,
     ) -> Result<Self, ParseError> {
-        let params = params
-            .into_iter()
-            .map(|param| match param {
-                RawExpr {
-                    kind: RawExprKind::Identifier(name),
-                    ..
-                } => Ok(name),
+        let mut names: Vec<String> = Vec::with_capacity(params.len());
 
-                other => {
-                    let span = other.span;
-                    let kind = ParseErrorKind::InvalidParameter(other);
+        for param in params {
+            let RawExpr {
+                kind: RawExprKind::Identifier(name),
+                span,
+            } = param
+            else {
+                let span = param.span;
+                let kind = ParseErrorKind::InvalidParameter(param);
 
-                    Err(ParseError::new(kind, Some(span)))
-                }
-            })
-            .collect::<Result<Vec<String>, _>>()?;
+                return Err(ParseError::new(kind, Some(span)));
+            };
+
+            // a name can only stand for one slot, so the later one could
+            // never be read and an argument would be silently dropped
+            if names.contains(&name) {
+                let note = format!("'{}' is already a parameter of this function", name);
+                let kind = ParseErrorKind::DuplicateParameter(name);
+
+                return Err(ParseError::with_note(kind, Some(span), note));
+            }
+
+            names.push(name);
+        }
+
+        let params = names;
 
         bind_params(&mut body, &params);
 
