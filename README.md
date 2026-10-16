@@ -45,5 +45,5 @@ cargo run --release
 Input goes through four stages:
 * **Lexing** — raw string to tokens
 * **Parsing** — tokens to unresolved AST (`RawExpr`) via a Pratt parser
-* **Resolving** — `RawExpr` to resolved AST (`Expr`); identifiers, constants, and functions are looked up and validated
-* **Evaluation** — `Expr` is consumed and reduced to an `f64`
+* **Resolving** — each node of a `RawExpr` is looked up against the current variables and functions: identifiers, constants, and calls are validated, one node at a time
+* **Evaluation** — the `RawExpr` is reduced to an `f64` in place, resolving each node as it is reached. A typed expression is checked in full first; a function body is evaluated where it is stored, so a call copies nothing and only looks at the branch it takes

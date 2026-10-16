@@ -163,6 +163,7 @@ impl Calculator {
         let ans = match stmt {
             Statement::FuncDef(user_function, head) => {
                 self.check_not_a_variable(user_function.name(), head)?;
+                user_function.body().check_builtin_calls()?;
                 self.set_user_function(user_function);
 
                 return Ok(None);
@@ -171,7 +172,7 @@ impl Calculator {
             Statement::Assign(name, head, expr) => {
                 self.check_not_a_function(&name, head)?;
 
-                let expr = expr.resolve(&Scope::globals(&self.vars), &self.funcs, Depth::new())?;
+                expr.check(&Scope::globals(&self.vars), &self.funcs, Depth::new())?;
 
                 let ans = expr.eval(
                     &Scope::globals(&self.vars),
@@ -185,7 +186,7 @@ impl Calculator {
             }
 
             Statement::Eval(expr) => {
-                let expr = expr.resolve(&Scope::globals(&self.vars), &self.funcs, Depth::new())?;
+                expr.check(&Scope::globals(&self.vars), &self.funcs, Depth::new())?;
 
                 expr.eval(
                     &Scope::globals(&self.vars),

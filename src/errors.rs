@@ -311,7 +311,7 @@ pub enum ResolverErrorKind {
     },
     UndefinedAns, // when 'ans' is used as the first expression (no previous answer)
     ExpressionTooDeep,
-    UnboundParameter(std::rc::Rc<str>),
+    UnboundParameter(String),
     ArityMismatch {
         name: String,
         expected: usize,

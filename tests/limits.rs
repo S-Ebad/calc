@@ -40,7 +40,7 @@ fn a_body_within_reach_is_still_bounded_at_depth() {
     // of every call beneath it are counted as well
     assert!(matches!(
         eval_kind(&session.err("f(70)")),
-        Some(EvalErrorKind::Resolution(_))
+        Some(EvalErrorKind::ExpressionTooDeep)
     ));
 }
 
@@ -86,4 +86,22 @@ fn recursion_within_the_limit_is_fine() {
     session.ok("down(n) = n > 0 ? down(n - 1) : 0");
 
     assert_eq!(session.value("down(50)"), 0.0);
+}
+
+/// A body is evaluated where it is stored rather than resolved into a copy
+/// first, so an ordinary recursive body spends its depth on the calls
+/// themselves and runs into the recursion limit, not the stack guard.
+#[test]
+fn deep_recursion_through_a_real_body_reports_the_recursion_limit() {
+    let mut session = Session::new();
+    session.ok("fib(x) = x >= 2 ? fib(x - 1) + fib(x - 2) : x");
+
+    assert!(matches!(
+        eval_kind(&session.err("fib(1000)")),
+        Some(EvalErrorKind::RecursionLimit)
+    ));
+
+    session.ok("count(n) = n <= 0 ? 0 : 1 + count(n - 1)");
+
+    assert_eq!(session.value("count(75)"), 75.0);
 }

@@ -142,7 +142,7 @@ Resolver Error: Function g takes 2 argument(s) but got 1
 Resolver Error: Function g takes 2 argument(s) but got 3
 ```
 
-Functions use dynamic scoping, globals are resolved at call time, not definition time. Redefining a function replaces the previous definition.
+Functions use dynamic scoping, globals are resolved at call time, not definition time, and only in the branch a call actually takes. A wrong number of arguments to a built-in is the exception: it can never become right, so it is rejected when the function is defined. Redefining a function replaces the previous definition.
 
 ```
 > f(x) = g(x)

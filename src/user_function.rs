@@ -121,7 +121,7 @@ fn bind_params(expr: &mut RawExpr, params: &[String]) {
     match &mut expr.kind {
         RawExprKind::Identifier(name) => {
             if let Some(slot) = params.iter().position(|param| param == name) {
-                let name = std::rc::Rc::from(name.as_str());
+                let name = std::mem::take(name);
                 expr.kind = RawExprKind::Param { slot, name };
             }
         }

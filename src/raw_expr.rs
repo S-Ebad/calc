@@ -9,7 +9,7 @@ use crate::{
     write_args,
 };
 
-use std::{collections::HashMap, fmt, rc::Rc};
+use std::{collections::HashMap, fmt};
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum RawExprKind {
@@ -18,11 +18,10 @@ pub enum RawExprKind {
     Identifier(String),
 
     /// a reference to the enclosing function's own parameter, bound to a slot
-    /// at definition time. the name is kept only so diagnostics can quote it,
-    /// shared rather than owned because a body is cloned on every call
+    /// at definition time. the name is kept only so diagnostics can quote it
     Param {
         slot: usize,
-        name: Rc<str>,
+        name: String,
     },
 
     Binary {

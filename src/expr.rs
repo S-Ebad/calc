@@ -1,10 +1,11 @@
-use std::{collections::HashMap, fmt};
+use std::collections::HashMap;
 
 use crate::{
     calc::CacheKey,
     errors::{EvalError, EvalErrorKind, Span},
-    function::Function,
     operator::Operator,
+    raw_expr::RawExpr,
+    resolver::Node,
     scope::Scope,
     user_function::UserFunction,
 };
@@ -33,15 +34,15 @@ fn to_bits(args: &[f64]) -> Vec<u64> {
 ///
 /// `calls` bounds how deeply user functions may nest; it is the limit a
 /// runaway recursion is expected to hit. `cost` approximates the stack itself,
-/// which is a separate concern: resolving and evaluating a body happens
-/// underneath the frames of every call above it, so a modest body depth at a
-/// modest call depth still overflows.
+/// which is a separate concern: a body is evaluated underneath the frames of
+/// every call above it, so a modest body depth at a modest call depth still
+/// overflows.
 ///
-/// Descents are weighted because they are not alike. The parser and the
-/// resolver carry a whole match of locals per frame and run out of a default
-/// thread stack at around a hundred and fifty levels; the evaluator survives
-/// past three hundred. Counting them equally would either leave parsing
-/// unprotected or refuse recursion depths that are perfectly safe.
+/// Descents are weighted because they are not alike. The parser carries a
+/// whole match of locals per frame and runs out of a default thread stack at
+/// around a hundred and fifty levels; the evaluator survives past four hundred.
+/// Counting them equally would either leave parsing unprotected or refuse
+/// recursion depths that are perfectly safe.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct Depth {
     calls: u32,
@@ -61,7 +62,7 @@ impl Depth {
         Self::default()
     }
 
-    /// One level further into a nested expression, while parsing or resolving.
+    /// One level further into a nested expression, while parsing or checking.
     pub fn nest(self) -> Self {
         Self {
             cost: self.cost + Self::NESTING_COST,
@@ -94,80 +95,14 @@ impl Depth {
     }
 }
 
-#[derive(Debug, PartialEq, Clone)]
-pub enum ExprKind {
-    Number(f64),
-
-    Binary {
-        op: Operator,
-        lhs: Box<Expr>,
-        rhs: Box<Expr>,
-    },
-
-    Unary {
-        op: Operator,
-        expr: Box<Expr>,
-    },
-
-    Postfix {
-        op: Operator,
-        expr: Box<Expr>,
-    },
-
-    Call {
-        func: Function,
-        args: Vec<Expr>,
-    },
-
-    UserCall {
-        name: String, //hold name only, definition is somewhere else
-        args: Vec<Expr>,
-    },
-
-    If {
-        condition: Box<Expr>,
-        then: Box<Expr>,
-        else_: Box<Expr>,
-    },
-}
-
-#[derive(Debug, PartialEq, Clone)]
-pub struct Expr {
-    pub(crate) kind: ExprKind,
-    pub(crate) span: Span,
-}
-
-impl Expr {
-    pub fn new(kind: ExprKind, span: Span) -> Self {
-        Self { kind, span }
-    }
-
-    pub fn kind(&self) -> &ExprKind {
-        &self.kind
-    }
-
-    pub fn span(&self) -> &Span {
-        &self.span
-    }
-}
-
-impl std::ops::DerefMut for Expr {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.kind
-    }
-}
-
-impl std::ops::Deref for Expr {
-    type Target = ExprKind;
-
-    fn deref(&self) -> &Self::Target {
-        &self.kind
-    }
-}
-
-impl Expr {
+impl RawExpr {
+    /// Evaluate the expression where it is stored.
+    ///
+    /// Each node is resolved as it is reached rather than in a pass of its own,
+    /// so a call reads its body in place: nothing is copied, a branch that is
+    /// not taken is never looked at, and only one walk is ever on the stack.
     pub fn eval(
-        self,
+        &self,
         scope: &Scope,
         funcs: &HashMap<String, UserFunction>,
         cache: &mut HashMap<CacheKey, f64>,
@@ -188,127 +123,113 @@ impl Expr {
 
         let depth = depth.step();
 
-        match self.kind {
-            ExprKind::Number(num) => Ok(num),
-            ExprKind::Binary { op, lhs, rhs } => {
+        match self.resolve(scope, funcs)? {
+            Node::Number(num) => Ok(num),
+
+            Node::Binary { op, lhs, rhs } => {
                 let lhs = lhs.eval(scope, funcs, cache, depth)?;
                 let rhs = rhs.eval(scope, funcs, cache, depth)?;
 
                 op.perform_op(lhs, Some(rhs)).map_err(at_span)
             }
 
-            ExprKind::Unary { op, expr } | ExprKind::Postfix { op, expr } => op
+            Node::Scaled { value, rhs } => {
+                let rhs = rhs.eval(scope, funcs, cache, depth)?;
+
+                Operator::ImplicitMul
+                    .perform_op(value, Some(rhs))
+                    .map_err(at_span)
+            }
+
+            Node::Unary { op, expr } => op
                 .perform_op(expr.eval(scope, funcs, cache, depth)?, None)
                 .map_err(at_span),
 
-            ExprKind::Call { func, args } => {
-                let args = args
-                    .into_iter()
-                    .map(|expr| expr.eval(scope, funcs, cache, depth))
-                    .collect::<Result<Vec<f64>, _>>()?;
+            Node::Call { func, args } => {
+                let args = eval_args(args, scope, funcs, cache, depth)?;
 
                 func.call(&args).map_err(at_span)
             }
 
-            ExprKind::If {
-                condition: condit,
+            Node::If {
+                condition,
                 then,
                 else_,
             } => {
-                if condit.eval(scope, funcs, cache, depth)? != 0.0 {
+                if condition.eval(scope, funcs, cache, depth)? != 0.0 {
                     then.eval(scope, funcs, cache, depth)
                 } else {
                     else_.eval(scope, funcs, cache, depth)
                 }
             }
 
-            ExprKind::UserCall { name, args } => {
-                let func = funcs.get(&name).unwrap();
-                let func_params = func.params();
+            Node::UserCall { func, args } => {
+                let args = eval_args(args, scope, funcs, cache, depth)?;
 
-                // borrowed, not cloned: only the error path needs the source
-                let func_src = func.src();
-
-                let func_body = func.body().clone();
-
-                let eval_args = args
-                    .into_iter()
-                    .map(|x| x.eval(scope, funcs, cache, depth))
-                    .collect::<Result<Vec<f64>, _>>()?;
-
-                let key = (name, to_bits(&eval_args));
-
-                // cache hit
-                if let Some(num) = cache.get(&key) {
-                    return Ok(*num);
-                }
-
-                // the body's own parameters over the same globals
-                let frame = scope.frame(func_params, &eval_args);
-
-                // a name the callee could not find may be one of ours. that it
-                // is out of reach is the deliberate rule rather than an
-                // oversight, so the diagnostic should say which it is. every
-                // boundary checks its own, so a name bound further up is still
-                // recognised on the way out
-                let explain = |err: EvalError| match err.unresolved_name() {
-                    Some(unresolved) if scope.has_param(unresolved) => {
-                        let note = format!(
-                            "'{}' is a parameter of a calling function; pass it as an argument",
-                            unresolved
-                        );
-
-                        err.or_note(note)
-                    }
-
-                    _ => err,
-                };
-
-                // under dynamic scoping the body can only be resolved once the
-                // arguments are known, so resolution is an eval-time step here.
-                // either step can fail inside the body, so both record the call
-                let new_body = func_body.resolve(&frame, funcs, depth).map_err(|err| {
-                    explain(EvalError::from(err)).push_frame(&key.0, func_src, span)
-                })?;
-
-                let result = new_body
-                    .eval(&frame, funcs, cache, depth.call())
-                    .map_err(|err| explain(err).push_frame(&key.0, func_src, span))?;
-
-                cache.insert(key, result);
-
-                Ok(result)
+                call_user(func, args, span, scope, funcs, cache, depth)
             }
         }
     }
 }
 
-impl fmt::Display for Expr {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.kind)
-    }
+// the parts of a call live in functions of their own. an unoptimised build
+// gives every local of a function its own slot, so kept inline they would sit
+// in each frame of the walk rather than only while a call is being made
+
+fn eval_args(
+    args: &[RawExpr],
+    scope: &Scope,
+    funcs: &HashMap<String, UserFunction>,
+    cache: &mut HashMap<CacheKey, f64>,
+    depth: Depth,
+) -> Result<Vec<f64>, EvalError> {
+    args.iter()
+        .map(|expr| expr.eval(scope, funcs, cache, depth))
+        .collect()
 }
 
-impl fmt::Display for ExprKind {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Number(n) => write!(f, "{:.2}", n),
+fn call_user(
+    func: &UserFunction,
+    args: Vec<f64>,
+    span: Span,
+    scope: &Scope,
+    funcs: &HashMap<String, UserFunction>,
+    cache: &mut HashMap<CacheKey, f64>,
+    depth: Depth,
+) -> Result<f64, EvalError> {
+    let key = (func.name().to_owned(), to_bits(&args));
 
-            Self::Binary { op, lhs, rhs } => write!(f, "{} {} {}", lhs, op, rhs),
-            Self::Unary { op, expr } | Self::Postfix { op, expr } => {
-                write!(f, "{}({})", op, expr)
-            }
-            Self::Call { func, args } => {
-                write_args!(f, func, args)
-            }
-            Self::UserCall { name, args } => {
-                write_args!(f, name, args)
-            }
-            Self::If {
-                condition,
-                then,
-                else_,
-            } => write!(f, "{} ? {} : {}", condition, then, else_),
-        }
+    // cache hit
+    if let Some(num) = cache.get(&key) {
+        return Ok(*num);
     }
+
+    // the body's own parameters over the same globals
+    let frame = scope.frame(func.params(), &args);
+
+    // a name the callee could not find may be one of ours. that it is out of
+    // reach is the deliberate rule rather than an oversight, so the diagnostic
+    // should say which it is. every boundary checks its own, so a name bound
+    // further up is still recognised on the way out
+    let explain = |err: EvalError| match err.unresolved_name() {
+        Some(unresolved) if scope.has_param(unresolved) => {
+            let note = format!(
+                "'{}' is a parameter of a calling function; pass it as an argument",
+                unresolved
+            );
+
+            err.or_note(note)
+        }
+
+        _ => err,
+    };
+
+    let result = func
+        .body()
+        .eval(&frame, funcs, cache, depth.call())
+        .map_err(|err| explain(err).push_frame(func.name(), func.src(), span))?;
+
+    cache.insert(key, result);
+
+    Ok(result)
 }

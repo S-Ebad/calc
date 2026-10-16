@@ -217,3 +217,40 @@ fn an_implicit_call_still_takes_its_argument() {
     assert_eq!(round(session.value("sin -1")), round(-(1f64).sin()));
     assert_eq!(session.value("sin 0"), 0.0);
 }
+
+/// Names in a body are only looked up when the call reaches them, so a branch
+/// the call does not take may refer to something that does not exist (yet).
+#[test]
+fn an_untaken_branch_of_a_body_is_not_resolved() {
+    let mut session = Session::new();
+    session.ok("f(x) = x > 0 ? x : missing");
+
+    assert_eq!(session.value("f(3)"), 3.0);
+
+    assert!(matches!(
+        eval_kind(&session.err("f(-3)")),
+        Some(EvalErrorKind::Resolution(kind))
+            if matches!(kind.as_ref(), ResolverErrorKind::UnknownIdentifier(name) if name == "missing")
+    ));
+
+    session.ok("missing = 7");
+
+    assert_eq!(session.value("f(-3)"), 7.0);
+}
+
+/// How many arguments a built-in takes cannot change, so a wrong count in a
+/// body is refused when the function is written, whichever branch it is in.
+#[test]
+fn a_builtin_with_the_wrong_arity_is_refused_at_definition() {
+    let mut session = Session::new();
+
+    for def in ["f(x) = sin(x, 2)", "f(x) = x > 0 ? x : max()"] {
+        assert!(matches!(
+            resolver_kind(&session.err(def)),
+            Some(ResolverErrorKind::BuiltinArity { .. })
+        ));
+    }
+
+    // nothing was defined by the refused attempts
+    assert!(session.is_err("f(1)"));
+}
