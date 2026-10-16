@@ -50,9 +50,7 @@ impl Calculator {
             return Ok(());
         }
 
-        let note = "pick a name that is not taken".to_string();
-
-        Err(ResolverError::with_note(kind, Some(span), note))
+        Err(ResolverError::new(kind, Some(span)))
     }
 
     fn check_not_a_function(&self, name: &str, span: Span) -> Result<(), ResolverError> {
