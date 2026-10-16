@@ -189,6 +189,8 @@ Outside the body nothing changes, so `f` is still the function. Constants (`pi`,
 ## UFCS (Uniform Function Call Syntax)
 Any value can call a function as if it were a method, with the value passed as the first argument: `value.f(rest, of, args)` is equivalent to `f(value, rest, of, args)`.
 
+Only functions can be called this way. With `x = 3`, `5.x()` is an error rather than `5 * 3`, and the same goes for a function's parameters inside its body.
+
 ```
 > f(x) = 2x
 

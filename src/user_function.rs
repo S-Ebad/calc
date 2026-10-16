@@ -135,6 +135,7 @@ fn bind_params(expr: &mut RawExpr, params: &[String]) {
         }
 
         RawExprKind::Apply { args, .. }
+        | RawExprKind::Method { args, .. }
         | RawExprKind::Call { args, .. }
         | RawExprKind::UserCall { args, .. } => {
             for arg in args {
@@ -184,7 +185,10 @@ fn collect_free(expr: &RawExpr, free: &mut HashSet<String>) {
             collect_free(else_, free);
         }
 
-        RawExprKind::Call { args, .. } | RawExprKind::UserCall { args, .. } => {
+        // a method's name is never read as a variable, so it is not free
+        RawExprKind::Method { args, .. }
+        | RawExprKind::Call { args, .. }
+        | RawExprKind::UserCall { args, .. } => {
             for arg in args {
                 collect_free(arg, free);
             }

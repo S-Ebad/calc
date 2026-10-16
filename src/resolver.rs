@@ -74,25 +74,7 @@ impl RawExpr {
                         rhs: Box::new(rhs),
                     }
                 } else if let Some(user_func) = funcs.get(&name) {
-                    if user_func.arity() != args.len() {
-                        let kind = ResolverErrorKind::ArityMismatch {
-                            name: user_func.to_string(),
-                            expected: user_func.arity(),
-                            got: args.len(),
-                        };
-
-                        return Err(ResolverError::new(kind, Some(span)));
-                    }
-
-                    let resolved_args = args
-                        .into_iter()
-                        .map(|raw_expr| raw_expr.resolve(scope, funcs, depth))
-                        .collect::<Result<Vec<Expr>, _>>()?;
-
-                    ExprKind::UserCall {
-                        name,
-                        args: resolved_args,
-                    }
+                    user_call(user_func, args, span, scope, funcs, depth)?
                 } else if let Some(func) = Function::from(&name) {
                     check_builtin_arity(func, args.len(), span)?;
 
@@ -105,6 +87,23 @@ impl RawExpr {
                         func,
                         args: resolved_args,
                     }
+                } else {
+                    let kind = ResolverErrorKind::UnknownFunction(name);
+                    return Err(ResolverError::new(kind, Some(span)));
+                }
+            }
+
+            RawExprKind::Method { name, args } => {
+                // the function wins over a variable of the same name, since
+                // '.' only ever calls. parameters never get here: the parser
+                // already refused them
+                if let Some(user_func) = funcs.get(&name) {
+                    user_call(user_func, args, span, scope, funcs, depth)?
+                } else if scope.get(&name).is_some() {
+                    let note = "only functions can be called with '.'".to_string();
+                    let kind = ResolverErrorKind::NotAFunction(name);
+
+                    return Err(ResolverError::with_note(kind, Some(span), note));
                 } else {
                     let kind = ResolverErrorKind::UnknownFunction(name);
                     return Err(ResolverError::new(kind, Some(span)));
@@ -188,6 +187,36 @@ impl RawExpr {
 
         Ok(Expr::new(kind, span))
     }
+}
+
+/// A call to a user function, once the name is known to be one.
+fn user_call(
+    user_func: &UserFunction,
+    args: Vec<RawExpr>,
+    span: Span,
+    scope: &Scope,
+    funcs: &HashMap<String, UserFunction>,
+    depth: Depth,
+) -> Result<ExprKind, ResolverError> {
+    if user_func.arity() != args.len() {
+        let kind = ResolverErrorKind::ArityMismatch {
+            name: user_func.to_string(),
+            expected: user_func.arity(),
+            got: args.len(),
+        };
+
+        return Err(ResolverError::new(kind, Some(span)));
+    }
+
+    let args = args
+        .into_iter()
+        .map(|raw_expr| raw_expr.resolve(scope, funcs, depth))
+        .collect::<Result<Vec<Expr>, _>>()?;
+
+    Ok(ExprKind::UserCall {
+        name: user_func.name().to_owned(),
+        args,
+    })
 }
 
 /// How many arguments a built-in takes is fixed by which built-in it is, so a

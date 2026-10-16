@@ -194,6 +194,7 @@ pub enum ParseErrorKind {
     CannotStartExpression(Token),
     UnexpectedToken(Token),
     FunctionUsedAsValue(String),
+    NotAFunction(String),
     ExpressionTooDeep,
 }
 
@@ -210,6 +211,7 @@ impl ParseErrorKind {
             ParseErrorKind::FunctionUsedAsValue(name) => {
                 format!("'{}' is a function, not a value", name)
             }
+            ParseErrorKind::NotAFunction(name) => format!("'{}' is a value, not a function", name),
 
             ParseErrorKind::MissingClosingParenthesis => "unclosed parenthesis".to_string(),
             ParseErrorKind::UnexpectedEndOfInput => "unexpected end of input".to_string(),
@@ -295,6 +297,7 @@ pub enum ResolverErrorKind {
     },
 
     UnknownFunction(String),
+    NotAFunction(String),
     UnknownIdentifier(String),
     BuiltinArity {
         func: Function,
@@ -321,6 +324,9 @@ impl ResolverErrorKind {
                 )
             }
             ResolverErrorKind::UnknownFunction(name) => format!("unknown function '{}'", name),
+            ResolverErrorKind::NotAFunction(name) => {
+                format!("'{}' is a value, not a function", name)
+            }
             ResolverErrorKind::BuiltinArity { func, got } => format!(
                 "function {} takes {} argument(s) but got {}",
                 func,

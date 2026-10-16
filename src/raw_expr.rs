@@ -47,6 +47,14 @@ pub enum RawExprKind {
         args: Vec<RawExpr>,
     },
 
+    /// a '.' call to a function not known yet. unlike Apply it can only ever
+    /// be a call: UFCS is for functions, so a value of the name is an error
+    /// rather than something to multiply
+    Method {
+        name: String,
+        args: Vec<RawExpr>,
+    },
+
     Call {
         func: Function,
         args: Vec<RawExpr>,
@@ -134,6 +142,25 @@ impl ParseCtx<'_> {
         }
 
         self.global_call(name, args)
+    }
+
+    /// The node for a '.' call, which has to be a function.
+    ///
+    /// Whether a name nobody knows yet is a function is left to the resolver,
+    /// as it may be defined after the body that calls it. A parameter is known
+    /// to be a value already, and refused here.
+    fn method(&self, name: String, args: Vec<RawExpr>, span: Span) -> Result<RawExprKind, ParseError> {
+        if self.is_param(&name) {
+            let note = "only functions can be called with '.'".to_string();
+            let kind = ParseErrorKind::NotAFunction(name);
+
+            return Err(ParseError::with_note(kind, Some(span), note));
+        }
+
+        Ok(match self.global_call(name, args) {
+            RawExprKind::Apply { name, args } => RawExprKind::Method { name, args },
+            known => known,
+        })
     }
 
     /// The node for calling a name as it is known outside any definition.
@@ -411,7 +438,7 @@ fn led(
             // a dot-call spans its receiver too, since that is its first argument
             let call_span = lhs_span.merge(args_span);
 
-            RawExpr::new(ctx.call(name, args), call_span)
+            RawExpr::new(ctx.method(name, args, call_span)?, call_span)
         }
 
         Some(Token {
@@ -757,7 +784,7 @@ impl fmt::Display for RawExprKind {
                 else_,
             } => write!(f, "{} ? {} : {}", condition.kind, then.kind, else_.kind),
 
-            Self::Apply { name, args } => write_args!(f, name, args),
+            Self::Apply { name, args } | Self::Method { name, args } => write_args!(f, name, args),
             Self::Call { func, args } => write_args!(f, func, args),
             Self::UserCall { name, args } => write_args!(f, name, args),
             Self::Constant(constant) => write!(f, "{}", constant),
