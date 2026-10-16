@@ -9,6 +9,35 @@ pub enum CalcError {
 }
 
 impl CalcError {
+    /// The same error with its spans moved `by` bytes along, for a statement
+    /// that started partway into a longer input.
+    ///
+    /// Only the outermost layer is written in the input's terms. Below a call,
+    /// spans index into the definition being run, which no offset into the
+    /// input applies to.
+    pub(crate) fn shifted(mut self, by: usize) -> Self {
+        let shift = |span: &mut Option<Span>| {
+            if let Some(span) = span {
+                *span = span.shift(by);
+            }
+        };
+
+        match &mut self {
+            CalcError::Lexer(e) => shift(&mut e.span),
+            CalcError::Parser(e) => shift(&mut e.span),
+            CalcError::Resolver(e) => shift(&mut e.span),
+
+            // frames are innermost first, so the call made from the input is
+            // the last one
+            CalcError::Eval(e) => match e.frames.as_deref_mut().and_then(|f| f.last_mut()) {
+                Some(outermost) => outermost.call_span = outermost.call_span.shift(by),
+                None => shift(&mut e.span),
+            },
+        }
+
+        self
+    }
+
     // every variant is a Diagnostic, so reporting is pure delegation
     fn inner(&self) -> &dyn Diagnostic {
         match self {
@@ -82,6 +111,13 @@ impl Span {
         let end = self.end.max(b.end);
 
         Self { start, end }
+    }
+
+    fn shift(self, by: usize) -> Self {
+        Self {
+            start: self.start + by,
+            end: self.end + by,
+        }
     }
 }
 

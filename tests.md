@@ -62,6 +62,13 @@ changing a global that a body reads, and an answer a body depends on. Also
 what must *not* discard it, since clearing too eagerly would make memoisation
 pointless.
 
+### statements
+Several statements in one input: they run in order and the last one answers,
+definitions carry forward, empty statements are skipped, and the first error
+stops the rest while keeping what ran. Errors are checked to point into the
+whole input, on the right line of a multi-line one, while a frame inside a call
+still points into the definition.
+
 ### logic
 Equality and comparison, boolean operators with `true`/`false` and numeric
 truthiness, precedence between arithmetic, comparison and logic, and the

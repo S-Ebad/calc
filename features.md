@@ -214,3 +214,25 @@ sqrt 10.5.max(3)
 = 3.24
 ```
 
+
+## Statements
+Several statements can share one input, separated by `;`. They run in order, so each one sees what the ones before it defined, and the answer is the last statement's. Line breaks are just whitespace, which means a whole file of definitions can be passed in at once.
+
+```
+> a = 2; b = a * 3; a + b
+= 8
+
+> sq(x) = x^2; cube(x) = x * sq(x); cube(3)
+= 27
+```
+
+Empty statements, such as a trailing `;`, are skipped. The first error stops the statements after it, and whatever ran before it stays defined. The error points into the whole input:
+
+```
+> a = 1; b = zzz; c = 3
+Resolver Error: unknown identifier 'zzz'
+ a = 1; b = zzz; c = 3
+            ^^^
+```
+
+Each function keeps only its own statement as its definition, so `help` shows just that statement.

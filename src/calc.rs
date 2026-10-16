@@ -170,8 +170,41 @@ impl Calculator {
         })
     }
 
+    /// Solve each statement of the input in turn, separated by ';'.
+    ///
+    /// Statements run in order, so a later one sees what an earlier one
+    /// defined, and the result is the last statement's. The first error stops
+    /// the rest; what ran before it stays done.
     fn solve_on_this_thread(&mut self, buf: &str) -> Result<Option<f64>, CalcError> {
-        if let Some(rest) = Self::help_argument(buf).filter(|rest| Self::is_valid_help_name(rest)) {
+        let separated = buf.contains(';');
+
+        let mut ans = None;
+        let mut offset = 0;
+
+        for statement in buf.split(';') {
+            // a trailing ';' or a doubled one leaves nothing to solve. an
+            // input that is empty without any separator is still a mistake
+            if !(separated && statement.trim().is_empty()) {
+                // each statement is solved against its own text, so a function
+                // keeps only its own definition rather than the whole input,
+                // and the error is moved back to where it sits in the input
+                ans = self
+                    .solve_statement(statement)
+                    .map_err(|err| err.shifted(offset))?;
+            }
+
+            offset += statement.len() + ';'.len_utf8();
+        }
+
+        Ok(ans)
+    }
+
+    fn solve_statement(&mut self, buf: &str) -> Result<Option<f64>, CalcError> {
+        // whitespace around a statement is only what separates it from the
+        // one before
+        if let Some(rest) =
+            Self::help_argument(buf.trim()).filter(|rest| Self::is_valid_help_name(rest))
+        {
             self.help(rest);
 
             return Ok(None);
