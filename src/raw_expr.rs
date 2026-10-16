@@ -149,7 +149,12 @@ impl ParseCtx<'_> {
     /// Whether a name nobody knows yet is a function is left to the resolver,
     /// as it may be defined after the body that calls it. A parameter is known
     /// to be a value already, and refused here.
-    fn method(&self, name: String, args: Vec<RawExpr>, span: Span) -> Result<RawExprKind, ParseError> {
+    fn method(
+        &self,
+        name: String,
+        args: Vec<RawExpr>,
+        span: Span,
+    ) -> Result<RawExprKind, ParseError> {
         if self.is_param(&name) {
             let note = "only functions can be called with '.'".to_string();
             let kind = ParseErrorKind::NotAFunction(name);
@@ -246,11 +251,7 @@ fn consume_args(
     Ok((args, open_span.merge(close.span)))
 }
 
-fn nud(
-    lexer: &mut Lexer,
-    ctx: &ParseCtx,
-    depth: Depth,
-) -> Result<RawExpr, ParseError> {
+fn nud(lexer: &mut Lexer, ctx: &ParseCtx, depth: Depth) -> Result<RawExpr, ParseError> {
     // nesting recurses here: a group, an argument list or a unary chain each
     // re-enter nud, so the native stack grows with how deeply they nest. a
     // flat left-associative chain loops in parse_expression instead and is
@@ -601,7 +602,10 @@ fn parse_head(lexer: &mut Lexer, ctx: &ParseCtx) -> Result<RawExpr, ParseError> 
 
     let (args, args_span) = consume_args(lexer, ctx, Depth::new())?;
 
-    Ok(RawExpr::new(ctx.global_call(name, args), span.merge(args_span)))
+    Ok(RawExpr::new(
+        ctx.global_call(name, args),
+        span.merge(args_span),
+    ))
 }
 
 impl RawExpr {

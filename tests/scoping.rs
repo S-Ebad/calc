@@ -35,7 +35,10 @@ fn a_shadowing_parameter_reads_as_a_value_wherever_it_appears() {
     session.ok("f(x) = x");
 
     // at the end of the body, before an argument, and as a factor
-    session.ok("a(f) = 2f").ok("b(f, y) = f y").ok("c(f) = f(2)");
+    session
+        .ok("a(f) = 2f")
+        .ok("b(f, y) = f y")
+        .ok("c(f) = f(2)");
 
     assert_eq!(session.value("a(5)"), 10.0);
     assert_eq!(session.value("b(3, 4)"), 12.0);
@@ -68,7 +71,11 @@ fn outside_a_definition_a_function_is_still_called() {
     let mut session = Session::new();
     session.ok("f(x) = 2x");
 
-    assert_eq!(session.value("f -2*3"), -12.0, "an implicit call, then the product");
+    assert_eq!(
+        session.value("f -2*3"),
+        -12.0,
+        "an implicit call, then the product"
+    );
     assert!(session.is_err("max(1, f)"));
 }
 
