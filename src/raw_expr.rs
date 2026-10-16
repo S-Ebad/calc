@@ -292,7 +292,9 @@ fn nud(lexer: &mut Lexer, ctx: &ParseCtx, depth: Depth) -> Result<RawExpr, Parse
             if !is_func {
                 RawExpr::new(RawExprKind::Identifier(name), span)
             } else {
-                if matches!(lexer.peek(), Some(TokenKind::Comma | TokenKind::RParen)) {
+                // nothing an argument could start with, so the name is being
+                // used as a value, which it cannot be
+                if !lexer.peek().is_some_and(TokenKind::can_start_operand) {
                     let note = format!("call it with parentheses, e.g. '{name}()'");
                     let kind = ParseErrorKind::FunctionUsedAsValue(name);
 

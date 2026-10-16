@@ -209,6 +209,22 @@ impl TokenKind {
         }
     }
 
+    /// Whether this token could begin an operand.
+    ///
+    /// An eager call takes the next operand as its argument, so a name only
+    /// reads as a call when something an argument could start with follows it.
+    pub fn can_start_operand(&self) -> bool {
+        matches!(
+            self,
+            TokenKind::Number(_)
+                | TokenKind::Identifier(_)
+                | TokenKind::Constant(_)
+                | TokenKind::Function(_)
+                | TokenKind::LParen
+                | TokenKind::Operator(Operator::Sub | Operator::Add)
+        )
+    }
+
     pub fn left_bp(&self) -> u8 {
         match self {
             TokenKind::Operator(op) => op.bp().0,

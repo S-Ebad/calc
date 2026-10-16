@@ -137,3 +137,35 @@ fn a_parameter_name_cannot_repeat() {
     session.ok("f(a, b) = a + b");
     assert_eq!(session.value("f(1, 2)"), 3.0);
 }
+
+/// There are no function values, so a name used where one is expected is an
+/// error rather than something the parser should try to call.
+#[test]
+fn a_function_used_as_a_value_says_so() {
+    let mut session = Session::new();
+    session.ok("f(n) = n * 10");
+
+    for line in ["f", "2 f", "f!", "f * 2", "max(1, f)", "sin"] {
+        assert!(
+            matches!(
+                parse_kind(&session.err(line)),
+                Some(ParseErrorKind::FunctionUsedAsValue(_))
+            ),
+            "{:?}",
+            line
+        );
+    }
+}
+
+/// An eager call still takes the next operand, including a negative one, so
+/// the check above must not swallow these.
+#[test]
+fn an_implicit_call_still_takes_its_argument() {
+    let mut session = Session::new();
+    session.ok("f(n) = n * 10");
+
+    assert_eq!(session.value("f 3"), 30.0);
+    assert_eq!(session.value("2 f 3"), 60.0);
+    assert_eq!(round(session.value("sin -1")), round(-(1f64).sin()));
+    assert_eq!(session.value("sin 0"), 0.0);
+}
