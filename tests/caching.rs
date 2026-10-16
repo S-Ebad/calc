@@ -11,7 +11,7 @@ fn memoization() {
         .solve("fib(x) = x <= 1 ? x : fib(x-1) + fib(x-2)")
         .unwrap();
 
-    // build up the cache. If you try to evaluate 100+ without any cache, it'll hit the
+    // build up the cache. If you try to evaluate 1000+ without any cache, it'll hit the
     // recursion limit.
     assert_eq!(calc.solve("fib 55").unwrap(), Some(139583862445.0));
     assert_eq!(
@@ -27,13 +27,17 @@ fn memoization() {
         Some(280571172992510160000000000000000000000000.0)
     );
 
+    // past the recursion limit, reachable only because 900 is already cached
+    assert!(calc.solve("fib 900").is_ok());
+    assert!(calc.solve("fib 1400").is_ok());
+
     // redefine fib to clear the cache
     let _ = calc
         .solve("fib(x) = x <= 1 ? x : fib(x-1) + fib(x-2)")
         .unwrap();
 
     // attempting to evaluate this will cause a recursion limit error
-    assert!(calc.solve("fib 200").is_err());
+    assert!(calc.solve("fib 1400").is_err());
 }
 
 /// The cache is keyed on a name and its arguments, so anything else a result

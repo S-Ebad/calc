@@ -13,6 +13,10 @@ use std::collections::HashMap;
 
 const PRECISION: f64 = 1e10;
 
+/// The stack every line is solved on, which the limits in `Depth` are
+/// measured against.
+pub const STACK_SIZE: usize = 64 * 1024 * 1024;
+
 pub type CacheKey = (String, Vec<u64>);
 
 pub struct Calculator {
@@ -147,7 +151,28 @@ impl Calculator {
         s.is_empty() || s.chars().all(|c| c.is_alphabetic() || c == '_')
     }
 
+    /// Evaluate one line of input.
+    ///
+    /// The work runs on a thread of its own, so how deep an expression or a
+    /// recursion may go is set by a stack this crate chose rather than by
+    /// whatever thread the caller happens to be on. The stack is only reserved:
+    /// what is actually used grows with the depth reached.
     pub fn solve(&mut self, buf: &str) -> Result<Option<f64>, CalcError> {
+        std::thread::scope(|scope| {
+            let worker = std::thread::Builder::new()
+                .name("calc".to_string())
+                .stack_size(STACK_SIZE)
+                .spawn_scoped(scope, || self.solve_on_this_thread(buf))
+                .expect("failed to spawn the evaluation thread");
+
+            // a panic is a bug rather than a result, so it carries on as one
+            worker
+                .join()
+                .unwrap_or_else(|panic| std::panic::resume_unwind(panic))
+        })
+    }
+
+    fn solve_on_this_thread(&mut self, buf: &str) -> Result<Option<f64>, CalcError> {
         if let Some(rest) = Self::help_argument(buf).filter(|rest| Self::is_valid_help_name(rest)) {
             self.help(rest);
 

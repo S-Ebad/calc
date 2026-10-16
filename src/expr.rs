@@ -38,11 +38,10 @@ fn to_bits(args: &[f64]) -> Vec<u64> {
 /// every call above it, so a modest body depth at a modest call depth still
 /// overflows.
 ///
-/// Descents are weighted because they are not alike. The parser carries a
-/// whole match of locals per frame and runs out of a default thread stack at
-/// around a hundred and fifty levels; the evaluator survives past four hundred.
-/// Counting them equally would either leave parsing unprotected or refuse
-/// recursion depths that are perfectly safe.
+/// Descents are weighted because they are not alike: a level of parsing
+/// carries a whole match of locals and takes more stack than a level of
+/// evaluation. Counting them equally would either leave parsing unprotected or
+/// refuse recursion depths that are perfectly safe.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct Depth {
     calls: u32,
@@ -50,11 +49,15 @@ pub struct Depth {
 }
 
 impl Depth {
-    const MAX_CALLS: u32 = 80;
+    // an ordinary recursive body spends a few units of cost per call, so this
+    // is reached well before the cost is, and a runaway recursion reports
+    // itself as one
+    const MAX_CALLS: u32 = 1000;
 
-    // measured against the 2 MiB a spawned thread gets rather than the larger
-    // main stack, since that is the smaller guarantee a caller has
-    const MAX_COST: u32 = 320;
+    // measured against `calc::STACK_SIZE` in an unoptimised build, which is
+    // the larger per-level cost: the worst shapes measured spend just under
+    // 4 KiB a unit, so this keeps about half of the stack in reserve
+    const MAX_COST: u32 = 8000;
     const NESTING_COST: u32 = 4;
     const EVAL_COST: u32 = 1;
 

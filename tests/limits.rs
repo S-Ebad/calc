@@ -39,7 +39,7 @@ fn a_body_within_reach_is_still_bounded_at_depth() {
     // the body parsed on its own, so this is only reachable once the frames
     // of every call beneath it are counted as well
     assert!(matches!(
-        eval_kind(&session.err("f(70)")),
+        eval_kind(&session.err("f(300)")),
         Some(EvalErrorKind::ExpressionTooDeep)
     ));
 }
@@ -85,7 +85,7 @@ fn recursion_within_the_limit_is_fine() {
     let mut session = Session::new();
     session.ok("down(n) = n > 0 ? down(n - 1) : 0");
 
-    assert_eq!(session.value("down(50)"), 0.0);
+    assert_eq!(session.value("down(500)"), 0.0);
 }
 
 /// A body is evaluated where it is stored rather than resolved into a copy
@@ -97,11 +97,29 @@ fn deep_recursion_through_a_real_body_reports_the_recursion_limit() {
     session.ok("fib(x) = x >= 2 ? fib(x - 1) + fib(x - 2) : x");
 
     assert!(matches!(
-        eval_kind(&session.err("fib(1000)")),
+        eval_kind(&session.err("fib(5000)")),
         Some(EvalErrorKind::RecursionLimit)
     ));
 
     session.ok("count(n) = n <= 0 ? 0 : 1 + count(n - 1)");
 
-    assert_eq!(session.value("count(75)"), 75.0);
+    assert_eq!(session.value("count(998)"), 998.0);
+}
+
+/// The depth on offer belongs to the calculator rather than to whichever
+/// thread calls it, so a caller on a small stack gets the same limits.
+#[test]
+fn the_limits_do_not_depend_on_the_callers_stack() {
+    let value = std::thread::Builder::new()
+        .stack_size(64 * 1024)
+        .spawn(|| {
+            let mut session = Session::new();
+            session.ok("count(n) = n <= 0 ? 0 : 1 + count(n - 1)");
+            session.value("count(998)")
+        })
+        .unwrap()
+        .join()
+        .unwrap();
+
+    assert_eq!(value, 998.0);
 }
