@@ -302,6 +302,8 @@ pub enum ResolverErrorKind {
 
     UnknownFunction(String),
     NotAFunction(String),
+    AlreadyAFunction(String),
+    AlreadyAVariable(String),
     UnknownIdentifier(String),
     BuiltinArity {
         func: Function,
@@ -330,6 +332,12 @@ impl ResolverErrorKind {
             ResolverErrorKind::UnknownFunction(name) => format!("unknown function '{}'", name),
             ResolverErrorKind::NotAFunction(name) => {
                 format!("'{}' is a value, not a function", name)
+            }
+            ResolverErrorKind::AlreadyAFunction(name) => {
+                format!("'{}' is already a function", name)
+            }
+            ResolverErrorKind::AlreadyAVariable(name) => {
+                format!("'{}' is already a variable", name)
             }
             ResolverErrorKind::BuiltinArity { func, got } => format!(
                 "function {} takes {} argument(s) but got {}",

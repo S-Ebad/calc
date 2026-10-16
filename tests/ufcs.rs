@@ -173,11 +173,15 @@ fn a_parameter_cannot_be_dot_called() {
 
 /// Where a function and a variable share a name, '.' means the function.
 #[test]
-fn a_dot_call_prefers_the_function_over_a_variable() {
+fn a_name_cannot_be_both_a_variable_and_a_function() {
     let mut session = Session::new();
-    session.ok("x = 3").ok("x(y) = y * 100");
+    session.ok("x = 3");
 
-    assert_eq!(session.value("5.x()"), 500.0);
+    // the collision a dot-call would otherwise have to choose between
+    assert!(matches!(
+        resolver_kind(&session.err("x(y) = y * 100")),
+        Some(ResolverErrorKind::AlreadyAVariable(_))
+    ));
 }
 
 /// A body may dot-call a function that is only defined afterwards.

@@ -1,7 +1,7 @@
 use strum::IntoEnumIterator;
 
 use crate::constant::Constant;
-use crate::errors::CalcError;
+use crate::errors::{CalcError, ResolverError, ResolverErrorKind, Span};
 use crate::expr::Depth;
 use crate::function::Function;
 use crate::lexer::Lexer;
@@ -28,6 +28,41 @@ impl Calculator {
             funcs: HashMap::new(),
             cache: HashMap::new(),
         }
+    }
+
+    /// A name stands for one kind of thing. Letting it be both a variable and
+    /// a function leaves one of them unreachable, since whether a name is a
+    /// call is decided while the line is still being read.
+    ///
+    /// Replacing a name with another of its own kind is fine; only crossing
+    /// from one kind to the other is refused.
+    fn check_free_for(
+        &self,
+        taken: bool,
+        kind: ResolverErrorKind,
+        span: Span,
+    ) -> Result<(), ResolverError> {
+        if !taken {
+            return Ok(());
+        }
+
+        let note = "pick a name that is not taken".to_string();
+
+        Err(ResolverError::with_note(kind, Some(span), note))
+    }
+
+    fn check_not_a_function(&self, name: &str, span: Span) -> Result<(), ResolverError> {
+        let taken = self.funcs.contains_key(name);
+        let kind = ResolverErrorKind::AlreadyAFunction(name.to_owned());
+
+        self.check_free_for(taken, kind, span)
+    }
+
+    fn check_not_a_variable(&self, name: &str, span: Span) -> Result<(), ResolverError> {
+        let taken = self.vars.contains_key(name);
+        let kind = ResolverErrorKind::AlreadyAVariable(name.to_owned());
+
+        self.check_free_for(taken, kind, span)
     }
 
     pub fn set_variable(&mut self, name: &str, value: f64) {
@@ -126,13 +161,16 @@ impl Calculator {
         let stmt = expr.classify(buf)?;
 
         let ans = match stmt {
-            Statement::FuncDef(user_function) => {
+            Statement::FuncDef(user_function, head) => {
+                self.check_not_a_variable(user_function.name(), head)?;
                 self.set_user_function(user_function);
 
                 return Ok(None);
             }
 
-            Statement::Assign(name, expr) => {
+            Statement::Assign(name, head, expr) => {
+                self.check_not_a_function(&name, head)?;
+
                 let expr = expr.resolve(&Scope::globals(&self.vars), &self.funcs, Depth::new())?;
 
                 let ans = expr.eval(

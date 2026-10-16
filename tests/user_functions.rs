@@ -138,6 +138,54 @@ fn a_parameter_name_cannot_repeat() {
     assert_eq!(session.value("f(1, 2)"), 3.0);
 }
 
+/// A name stands for one kind of thing. Whether it is a call is decided while
+/// the line is still being read, so a name that is both leaves one of them
+/// permanently unreachable.
+#[test]
+fn a_name_is_a_variable_or_a_function_but_not_both() {
+    let mut session = Session::new();
+    session.ok("v = 2");
+
+    assert!(matches!(
+        resolver_kind(&session.err("v(n) = n")),
+        Some(ResolverErrorKind::AlreadyAVariable(_))
+    ));
+
+    session.ok("g(n) = n");
+
+    assert!(matches!(
+        resolver_kind(&session.err("g = 5")),
+        Some(ResolverErrorKind::AlreadyAFunction(_))
+    ));
+}
+
+/// Replacing a name with another of its own kind is not a collision.
+#[test]
+fn a_name_may_be_replaced_by_its_own_kind() {
+    let mut session = Session::new();
+
+    session.ok("x = 1").ok("x = 2");
+    assert_eq!(session.value("x"), 2.0);
+
+    session.ok("f(n) = n").ok("f(n) = n * 2");
+    assert_eq!(session.value("f(3)"), 6.0);
+}
+
+/// A built-in is not a user function, so the collision check never sees it;
+/// assigning to one has to be refused on its own.
+#[test]
+fn a_builtin_name_cannot_be_assigned_to() {
+    assert!(matches!(
+        parse_kind(&err("sin = 5")),
+        Some(ParseErrorKind::InvalidAssignmentTarget(_))
+    ));
+
+    assert!(matches!(
+        parse_kind(&err("sin(x) = 2x")),
+        Some(ParseErrorKind::InvalidAssignmentTarget(_))
+    ));
+}
+
 /// There are no function values, so a name used where one is expected is an
 /// error rather than something the parser should try to call.
 #[test]

@@ -79,8 +79,10 @@ pub struct RawExpr {
 }
 
 pub enum Statement {
-    FuncDef(UserFunction),
-    Assign(String, RawExpr),
+    // the span is of the name being bound, so a clash with an existing one
+    // can be reported against the name rather than the whole line
+    FuncDef(UserFunction, Span),
+    Assign(String, Span, RawExpr),
     Eval(RawExpr),
 }
 
@@ -289,7 +291,11 @@ fn nud(lexer: &mut Lexer, ctx: &ParseCtx, depth: Depth) -> Result<RawExpr, Parse
         }) => {
             let is_func = ctx.is_func(&name) || lexer.peek() == Some(&TokenKind::LParen);
 
-            if !is_func {
+            // a name about to be assigned to is a target, not a call. taking
+            // it as one would hide what is wrong with the line
+            let assigned = matches!(lexer.peek(), Some(TokenKind::Operator(Operator::Equal)));
+
+            if !is_func || assigned {
                 RawExpr::new(RawExprKind::Identifier(name), span)
             } else {
                 // nothing an argument could start with, so the name is being
@@ -689,6 +695,19 @@ impl RawExpr {
                 }
 
                 RawExpr {
+                    kind: RawExprKind::Identifier(name),
+                    ..
+                } if Function::from(name).is_some() => {
+                    let kind = ParseErrorKind::InvalidAssignmentTarget(name.clone());
+
+                    return Err(ParseError::with_note(
+                        kind,
+                        Some(*lhs.span()),
+                        "built-in functions can't be redefined".to_string(),
+                    ));
+                }
+
+                RawExpr {
                     kind: RawExprKind::Call { func, .. },
                     ..
                 } => {
@@ -719,6 +738,8 @@ impl RawExpr {
                 span,
             } => match &lhs.kind {
                 RawExprKind::Apply { .. } | RawExprKind::UserCall { .. } => {
+                    let head = lhs.span;
+
                     let (RawExprKind::Apply { name, args } | RawExprKind::UserCall { name, args }) =
                         lhs.kind
                     else {
@@ -727,15 +748,17 @@ impl RawExpr {
 
                     let function = UserFunction::new(name, args, rhs, src.to_owned())?;
 
-                    Ok(Statement::FuncDef(function))
+                    Ok(Statement::FuncDef(function, head))
                 }
 
                 RawExprKind::Identifier(_) => {
+                    let head = lhs.span;
+
                     let RawExprKind::Identifier(ident) = lhs.kind else {
                         unreachable!()
                     };
 
-                    Ok(Statement::Assign(ident, *rhs))
+                    Ok(Statement::Assign(ident, head, *rhs))
                 }
 
                 _ => Ok(Statement::Eval(RawExpr::new(
