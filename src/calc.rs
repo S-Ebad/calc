@@ -178,7 +178,7 @@ impl Calculator {
     fn solve_on_this_thread(&mut self, buf: &str) -> Result<Option<f64>, CalcError> {
         // an input with nothing in it at all is still a mistake
         if buf.trim().is_empty() {
-            return self.solve_statement(buf);
+            return self.solve_statement(buf, buf);
         }
 
         let mut ans = None;
@@ -194,14 +194,16 @@ impl Calculator {
             // keeps only its own definition rather than the whole input, and
             // the error is moved back to where it sits in the input
             ans = self
-                .solve_statement(piece.text)
+                .solve_statement(piece.text, piece.described)
                 .map_err(|err| err.shifted(piece.offset))?;
         }
 
         Ok(ans)
     }
 
-    fn solve_statement(&mut self, buf: &str) -> Result<Option<f64>, CalcError> {
+    /// Solve a single statement. `described` is the same statement with any
+    /// comment that goes with it, which is what a definition keeps.
+    fn solve_statement(&mut self, buf: &str, described: &str) -> Result<Option<f64>, CalcError> {
         // whitespace and comments around a statement are only what separates
         // it from the one before
         let code = lexer::strip_comments(buf);
@@ -218,7 +220,7 @@ impl Calculator {
         let expr = RawExpr::parse(lexer, &self.funcs)?;
         expr.check_errors()?;
 
-        let stmt = expr.classify(buf)?;
+        let stmt = expr.classify(described)?;
 
         let ans = match stmt {
             Statement::FuncDef(user_function, head) => {

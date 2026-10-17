@@ -245,3 +245,12 @@ Each function keeps only its own statement as its definition, so `help` shows ju
 sq(x) = x^2;          # square
 cube(x) = x * sq(x);  # uses sq; defined above
 ```
+
+A comment on the same line as a statement, after its `;`, goes with that statement; comments on the lines above a statement go with it too. A function keeps its comments with its definition, so `help` shows them:
+
+```
+> help cube
+cube is a user-defined function.
+
+cube(x) = x * sq(x);  # uses sq; defined above
+```

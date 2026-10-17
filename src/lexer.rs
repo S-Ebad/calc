@@ -398,7 +398,14 @@ const SEPARATOR: char = ';';
 pub struct Piece<'a> {
     /// where the statement starts in the input, in bytes
     pub offset: usize,
+
+    /// the statement itself, up to its separator
     pub text: &'a str,
+
+    /// the statement along with a comment on the rest of its line, which is
+    /// what a definition keeps to show for itself. it starts where `text`
+    /// does, so spans into one index the other just the same
+    pub described: &'a str,
 
     /// whether anything is left once whitespace and comments are set aside
     pub has_code: bool,
@@ -421,7 +428,7 @@ pub fn statements(src: &str) -> impl Iterator<Item = Piece<'_>> {
         let mut has_code = false;
         let mut in_comment = false;
 
-        for (i, c) in chars.by_ref() {
+        while let Some((i, c)) = chars.next() {
             match c {
                 '\n' if in_comment => in_comment = false,
                 _ if in_comment => (),
@@ -429,13 +436,28 @@ pub fn statements(src: &str) -> impl Iterator<Item = Piece<'_>> {
                 COMMENT => in_comment = true,
 
                 SEPARATOR => {
+                    let after = i + SEPARATOR.len_utf8();
+
+                    // a comment belongs to this statement, so the next one
+                    // starts after it. without one, the separator is no part
+                    // of either
+                    let (described, next) = match trailing_comment(&src[after..]) {
+                        0 => (&src[start..i], after),
+                        len => (&src[start..after + len], after + len),
+                    };
+
+                    while chars.clone().next().is_some_and(|(j, _)| j < next) {
+                        chars.next();
+                    }
+
                     let piece = Piece {
                         offset: start,
                         text: &src[start..i],
+                        described,
                         has_code,
                     };
 
-                    start = i + SEPARATOR.len_utf8();
+                    start = next;
                     return Some(piece);
                 }
 
@@ -449,9 +471,23 @@ pub fn statements(src: &str) -> impl Iterator<Item = Piece<'_>> {
         Some(Piece {
             offset: start,
             text: &src[start..],
+            described: &src[start..],
             has_code,
         })
     })
+}
+
+/// How far a comment on the rest of the line reaches, or zero if the line has
+/// something else on it first. A comment written after a statement, on the same
+/// line, describes that statement rather than the one below it.
+fn trailing_comment(rest: &str) -> usize {
+    let line = rest.split('\n').next().unwrap_or_default();
+
+    if line.trim_start().starts_with(COMMENT) {
+        line.len()
+    } else {
+        0
+    }
 }
 
 /// The input with its comments taken out, for the few checks that read the

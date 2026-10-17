@@ -152,3 +152,36 @@ fn an_error_after_a_comment_points_past_it() {
         "Resolver Error: unknown identifier 'zzz'\n 1 + zzz\n     ^^^"
     );
 }
+
+/// What a function remembers is shown in a call's frame, so the frame shows
+/// which comment went with which definition.
+#[test]
+fn a_comment_after_the_separator_stays_with_its_statement() {
+    let mut session = Session::new();
+    session.ok("a(x) = x / q;  # divides by q\nb(x) = x / q;  # also divides\n");
+
+    assert_eq!(
+        session.render("a(1)"),
+        "Resolver Error: unknown identifier 'q'\n \
+         a(1)\n ^^^^ in the body of 'a'\n \
+         a(x) = x / q;  # divides by q\n            ^ unknown identifier 'q'"
+    );
+
+    // the comment before b's line went to a, so b keeps only its own
+    assert!(
+        session
+            .render("b(1)")
+            .contains("\n b(x) = x / q;  # also divides\n")
+    );
+}
+
+/// Only a comment on the rest of the same line goes with the statement before
+/// it; anything on the line after starts the next statement.
+#[test]
+fn a_comment_on_the_next_line_belongs_to_the_next_statement() {
+    let mut session = Session::new();
+    session.ok("a(x) = x / q;\n# about b\nb(x) = 1;");
+
+    assert!(session.render("a(1)").contains("\n a(x) = x / q\n"));
+    assert_eq!(session.value("b(5)"), 1.0);
+}
